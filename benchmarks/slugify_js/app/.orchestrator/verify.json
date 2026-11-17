@@ -1,0 +1,6 @@
+{
+  "setup": ["npm install --no-audit --no-fund"],
+  "test": ["npm test"],
+  "build": ["node --check index.js"],
+  "smoke": [{"command": "node scripts/smoke.mjs"}]
+}

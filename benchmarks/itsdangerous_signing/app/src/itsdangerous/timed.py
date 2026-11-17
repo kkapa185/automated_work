@@ -1,4 +1,4 @@
-"""Timestamp signer."""
+"""Timestamped signing."""
 from __future__ import annotations
 
 import time
@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 
 from .encoding import base64_decode, base64_encode, bytes_to_int, int_to_bytes, want_bytes
 from .exc import BadSignature, BadTimeSignature, SignatureExpired
+from .serializer import Serializer
 from .signer import Signer
 
 
@@ -33,7 +34,7 @@ class TimestampSigner(Signer):
     ) -> t.Any:
         try:
             result = super().unsign(signed_value)
-            sig_error: BadSignature | None = None
+            sig_error = None
         except BadSignature as e:
             sig_error = e
             result = e.payload or b""
@@ -49,15 +50,18 @@ class TimestampSigner(Signer):
         try:
             ts_int = bytes_to_int(base64_decode(ts_bytes))
         except Exception:
-            ts_int = None
+            pass
+
         if ts_int is not None:
             try:
                 ts_dt = self.timestamp_to_datetime(ts_int)
-            except (OverflowError, OSError, ValueError):
-                ts_int = None
+            except (ValueError, OSError, OverflowError) as exc:
+                raise BadTimeSignature("Malformed timestamp", payload=value) from exc
 
         if sig_error is not None:
-            raise BadTimeSignature(str(sig_error), payload=value, date_signed=ts_dt)
+            raise BadTimeSignature(
+                str(sig_error), payload=value, date_signed=ts_dt
+            )
 
         if ts_int is None or ts_dt is None:
             raise BadTimeSignature("Malformed timestamp", payload=value)
@@ -87,3 +91,45 @@ class TimestampSigner(Signer):
             return True
         except BadSignature:
             return False
+
+
+class TimedSerializer(Serializer):
+    """Serializer using :class:`TimestampSigner`."""
+
+    default_signer = TimestampSigner
+
+    def iter_unsigners(self, salt: str | bytes | None = None) -> t.Iterator[t.Any]:
+        return super().iter_unsigners(salt)
+
+    def loads(  # type: ignore[override]
+        self,
+        s: str | bytes,
+        max_age: int | None = None,
+        return_timestamp: bool = False,
+        salt: str | bytes | None = None,
+    ) -> t.Any:
+        s = want_bytes(s)
+        last_exception = None
+        for signer in self.iter_unsigners(salt):
+            try:
+                base64d, timestamp = signer.unsign(
+                    s, max_age=max_age, return_timestamp=True
+                )
+                payload = self.load_payload(base64d)
+                if return_timestamp:
+                    return payload, timestamp
+                return payload
+            except SignatureExpired:
+                # Expiry means the signature was valid; don't try others.
+                raise
+            except BadSignature as err:
+                last_exception = err
+        raise t.cast(BadSignature, last_exception)
+
+    def loads_unsafe(  # type: ignore[override]
+        self,
+        s: str | bytes,
+        max_age: int | None = None,
+        salt: str | bytes | None = None,
+    ) -> tuple[bool, t.Any]:
+        return self._loads_unsafe_impl(s, salt, load_kwargs={"max_age": max_age})

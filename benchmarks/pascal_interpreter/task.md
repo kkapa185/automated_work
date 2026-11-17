@@ -3,8 +3,9 @@
 Implement a Python interpreter for a small Pascal subset, runnable as `./spi <file.pas> [--scope] [--stack]`.
 
 ## Language
-* `PROGRAM <name>; <block> .` where a block is: optional `VAR` declarations (`a, b : INTEGER;`,
-  `x : REAL;`), zero or more nested `PROCEDURE <name> [ ( <formal parameters> ) ] ; <block> ;`
+* `PROGRAM <name>; <block> .` where a block is: at most ONE `VAR` keyword followed by one or more
+  declarations (`VAR a, b : INTEGER; x : REAL;`; a second `VAR` keyword in the same block is a
+  ParserError at that `VAR` token), then zero or more nested `PROCEDURE <name> [ ( <formal parameters> ) ] ; <block> ;`
   declarations (formal parameters grouped like `(a, b : INTEGER; c : REAL)`), then a compound statement.
 * Statements: `BEGIN ... END` (statements separated by `;`, empty statements allowed), assignment `x := expr`,
   procedure calls, always with parentheses: `Name(arg, ...)` or `Name()`.

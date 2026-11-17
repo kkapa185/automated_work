@@ -1,36 +1,35 @@
 # itsdangerous
 
-Pure-standard-library (Python >= 3.9) implementation of signed tokens for untrusted channels
-(cookies, URLs, e-mail), wire-compatible with the itsdangerous 2.x format.
+Stdlib-only (Python >= 3.9) library that signs data so it can travel through untrusted channels
+(cookies, URLs, e-mail) and be verified on return. Wire-compatible with the 2.x token format.
 
 ## Install / test
 ```
-pip install -e .          # no runtime dependencies
-pip install pytest
-python -m pytest
-python examples/demo.py   # smoke run
+pip install -e .
+pip install pytest && python -m pytest
 ```
 
 ## Usage
 ```python
-from itsdangerous import Signer, TimestampSigner, URLSafeTimedSerializer
+from itsdangerous import Signer, TimestampSigner, URLSafeTimedSerializer, BadSignature, SignatureExpired
 
-Signer("secret").sign(b"hello")          # b'hello.<sig>'
-TimestampSigner("secret").unsign(token, max_age=60)
-
-s = URLSafeTimedSerializer(["old-key", "new-key"], salt="activate")  # rotation: newest last
-token = s.dumps({"user": 42})
-s.loads(token, max_age=3600)
+Signer("secret").sign("hi")                  # b'hi.<sig>'
+s = URLSafeTimedSerializer(["old", "new"])   # key rotation: newest last
+token = s.dumps({"user": 1})
+try:
+    s.loads(token, max_age=3600)
+except SignatureExpired: ...
+except BadSignature: ...
 ```
 
 ## Format
-* Signature = urlsafe-base64 (no padding) of HMAC(derived key, value); token = `value + sep + signature`.
-* Key derivation: `concat` = H(salt+key); `django-concat` (default) = H(salt+"signer"+key);
-  `hmac` = HMAC(key, salt); `none` = key. Default digest is SHA-1.
-* `TimestampSigner`: `value.<b64 big-endian int timestamp>.<sig>`; timestamps are UTC-aware datetimes.
-* `Serializer` payload is compact JSON, signed with salt `itsdangerous`. URL-safe serializers
-  zlib-compress when shorter (prefix `.`) and base64 encode.
-* Signature comparison uses `hmac.compare_digest`. Multiple keys are tried newest first; `fallback_signers`
-  allow migrating signer settings.
-* Errors: `BadData` > `BadSignature` > `BadTimeSignature` > `SignatureExpired`; `BadSignature` > `BadHeader`;
-  `BadData` > `BadPayload`. `BadHeader` exists for API compatibility only (no JWS headers are produced).
+* Signature = unpadded URL-safe base64 of HMAC(derived key, value); token = `value + sep + signature`.
+* Key derivation: `concat` = H(salt+key); `django-concat` (Signer default) = H(salt+"signer"+key);
+  `hmac` = HMAC(key, salt) (Serializer default, with SHA-1); `none` = key.
+* `TimestampSigner`: `value.b64(big-endian timestamp).signature`; the signature covers value+sep+timestamp.
+* `Serializer` uses `json` (default formatting). URL-safe serializers use compact JSON, zlib-compress it
+  when that makes the token shorter (prefix `.`), then unpadded base64.
+* Signatures are compared with `hmac.compare_digest`.
+
+Errors: `BadData` > `BadSignature` > `BadTimeSignature` > `SignatureExpired`; `BadSignature` > `BadHeader`;
+`BadData` > `BadPayload`.

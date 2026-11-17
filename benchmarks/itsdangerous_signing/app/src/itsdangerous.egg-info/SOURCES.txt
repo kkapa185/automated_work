@@ -1,0 +1,15 @@
+README.md
+pyproject.toml
+src/itsdangerous/__init__.py
+src/itsdangerous/encoding.py
+src/itsdangerous/exc.py
+src/itsdangerous/serializer.py
+src/itsdangerous/signer.py
+src/itsdangerous/timed.py
+src/itsdangerous/url_safe.py
+src/itsdangerous.egg-info/PKG-INFO
+src/itsdangerous.egg-info/SOURCES.txt
+src/itsdangerous.egg-info/dependency_links.txt
+src/itsdangerous.egg-info/requires.txt
+src/itsdangerous.egg-info/top_level.txt
+tests/test_all.py

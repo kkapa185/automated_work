@@ -248,3 +248,13 @@ async def test_restart_after_reset_time_clears_stale_pause(settings, sleeps, fak
     reg.close()
     assert summary.status == TaskStatus.COMPLETED and clk.slept == 0
     assert final.resume_at is None and final.paused_phase is None
+
+
+def test_prompts_make_spec_normative_and_examples_tests():
+    from prompts import plan_prompt, review_prompt, implement_prompt
+    plan, impl, rev = plan_prompt("<ctx/>", None, "/w"), implement_prompt(None), review_prompt(1, 2)
+    for text in (plan, impl):
+        assert "are normative" in text and "Do not add defaults" in text
+        assert "must become an automated test" in text and "never by\n  running your own implementation" in text
+    assert "every concrete example given in the ticket" in plan
+    assert "check every default value" in rev

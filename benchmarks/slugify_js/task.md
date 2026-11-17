@@ -1,5 +1,8 @@
 # WEB-305: `slugify` — turn arbitrary strings into URL/filename-safe slugs (Node.js ESM library)
 
+The public API documentation of the library being replaced is provided in `docs/README.md`; it is
+normative (every example in it must hold).
+
 Build a dependency-light ES-module npm package (Node >= 18) whose default export is
 `slugify(string, options?)` and which also exports `slugifyWithCounter()`. Implement the transliteration
 yourself (tables for Latin with diacritics incl. German/Scandinavian/Vietnamese/Turkish, Greek,
@@ -11,6 +14,7 @@ Behaviour:
 * `slugify('I ♥ Dogs')` → `'i-love-dogs'`; `'  Déjà Vu!  '` → `'deja-vu'`; `'fooBar 123 $#%'` →
   `'foo-bar-123'`; `'Conway’s Law'` → `'conways-law'` (apostrophes inside words are removed, not
   separated); `'я люблю единорогов'` → `'ya-lyublyu-edinorogov'`.
+* Input is Unicode-normalised (NFC) first; custom replacements are matched against the normalised text.
 * Words are runs of ASCII letters/digits after transliteration; everything else becomes the separator;
   repeated separators collapse; no leading/trailing separators.
 * Options:
@@ -25,8 +29,9 @@ Behaviour:
   - `preserveTrailingDash` (default `false`): keep a trailing `-` if the input ends with one.
   - `preserveCharacters` (default `[]`): characters that are kept as-is (e.g. `['#']`); they may not
     include the separator.
-  - `locale`: language-specific transliteration (e.g. `'de'`: `ä`→`ae`, `ö`→`oe`, `ü`→`ue`; default maps
-    `ä`→`a`, etc. except where the general table says otherwise; `'sv'`, `'da'`/`'nb'` style rules).
+  - `locale`: language-specific transliteration. Without a locale the general table applies, which
+    already maps German umlauts to digraphs (`'Räksmörgås'` → `'raeksmoergas'`, `Ö` → `oe`); locales
+    override it (`{locale: 'sv'}`: `'Räksmörgås'` → `'raksmorgas'`; `'de'`, `'da'`, `'nb'`, ...).
   - `transliterate` (default `true`): when `false`, non-ASCII letters/digits are kept (still lowercased,
     separators applied).
 * `slugifyWithCounter()` returns a function that slugifies and appends `-2`, `-3`, ... to repeated

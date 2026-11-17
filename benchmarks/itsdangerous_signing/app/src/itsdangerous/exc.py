@@ -6,9 +6,11 @@ from datetime import datetime
 
 
 class BadData(Exception):
-    """Raised if bad data of any sort was encountered."""
+    """Base class for all errors raised for bad data."""
 
-    def __init__(self, message: str):
+    message: str
+
+    def __init__(self, message: str) -> None:
         super().__init__(message)
         self.message = message
 
@@ -17,33 +19,39 @@ class BadData(Exception):
 
 
 class BadSignature(BadData):
-    """Raised if a signature does not match."""
+    """The signature does not match."""
 
-    def __init__(self, message: str, payload: t.Any | None = None):
+    payload: t.Any | None
+
+    def __init__(self, message: str, payload: t.Any | None = None) -> None:
         super().__init__(message)
-        #: The payload that failed the signature test (may be unverified).
         self.payload = payload
 
 
 class BadTimeSignature(BadSignature):
-    """Raised if a time-based signature is invalid."""
+    """Signature is valid-looking but timestamp is bad or missing."""
+
+    date_signed: datetime | None
 
     def __init__(
         self,
         message: str,
         payload: t.Any | None = None,
         date_signed: datetime | None = None,
-    ):
+    ) -> None:
         super().__init__(message, payload)
         self.date_signed = date_signed
 
 
 class SignatureExpired(BadTimeSignature):
-    """Raised if a signature is valid but older than ``max_age``."""
+    """Signature is valid but older than ``max_age``."""
 
 
 class BadHeader(BadSignature):
-    """Raised if a signed header is invalid."""
+    """Signature valid but the header could not be decoded."""
+
+    header: t.Any | None
+    original_error: Exception | None
 
     def __init__(
         self,
@@ -51,15 +59,17 @@ class BadHeader(BadSignature):
         payload: t.Any | None = None,
         header: t.Any | None = None,
         original_error: Exception | None = None,
-    ):
+    ) -> None:
         super().__init__(message, payload)
         self.header = header
         self.original_error = original_error
 
 
 class BadPayload(BadData):
-    """Raised if a payload is correctly signed but cannot be deserialized."""
+    """The payload could not be decoded or deserialized."""
 
-    def __init__(self, message: str, original_error: Exception | None = None):
+    original_error: Exception | None
+
+    def __init__(self, message: str, original_error: Exception | None = None) -> None:
         super().__init__(message)
         self.original_error = original_error

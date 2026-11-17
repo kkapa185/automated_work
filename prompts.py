@@ -31,6 +31,14 @@ ENGINEERING_PRINCIPLES = """Engineering principles (apply them to whatever kind 
   or "left as an exercise". Every documented feature must actually work end-to-end.
 - Derive behaviour from the requirements and from first principles. Never special-case the inputs the
   tests use, and never hardcode expected outputs in place of real computation.
+- The ticket and any documents it provides (in the context above or in the workspace) are normative. If
+  your memory of a similar existing tool, library or format differs from them, follow the ticket and
+  documents. Do not add defaults, options, constants or behaviour that they do not call for; record any
+  doubt as an assumption instead of silently "improving" the spec.
+- Every concrete example in the ticket or provided documents (an input with its expected output, a
+  sample command with its printed result, a byte-level format sample) must become an automated test that
+  asserts exactly that output. Compute known-answer test vectors from the written definition, never by
+  running your own implementation and copying its output.
 - Keep the project self-contained: pin dependencies in the ecosystem's standard manifest
   (requirements.txt / pyproject.toml, package.json, go.mod, Cargo.toml, Makefile, ...), and make the
   test, build and run commands work from a clean checkout of this workspace.
@@ -91,7 +99,9 @@ Workspace: {workspace}
 3. Write `{REQUIREMENTS_FILE}` containing:
    - a one-paragraph statement of the product being built;
    - a numbered list of concrete, testable acceptance criteria (R1, R2, ...) covering every
-     feature, input/output format, interface and edge case implied by the request and context;
+     feature, input/output format, interface and edge case implied by the request and context,
+     including every concrete example given in the ticket or in provided documents (read any
+     documentation files in the workspace first);
    - assumptions you made about anything ambiguous;
    - the planned test strategy (which criteria are covered by which kind of test).
 4. Reply with a concise numbered execution plan: components/files, data flow, risks, and tests.
@@ -142,7 +152,9 @@ product against the original request and every acceptance criterion in `{REQUIRE
 1. For each criterion, check the actual code paths and run the real program (CLI, server, pipeline,
    library calls) on realistic inputs — not only the tests.
 2. Look for features that are missing, partially implemented, faked, hardcoded or untested; wrong
-   input/output formats; poor error handling; missing README/run instructions.
+   input/output formats; poor error handling; missing README/run instructions. Re-read the ticket and
+   provided documents line by line: check every default value, constant, format detail and example against
+   the code, and remove any behaviour the ticket does not ask for.
 3. Fix every gap you find, add tests for it, and re-run the full test suite.
 {_constraints_block(constraints)}
 End your reply with a checklist (criterion -> status) and then EXACTLY one final line:

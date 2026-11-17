@@ -1,0 +1,22 @@
+{
+  "name": "slugify-lite",
+  "version": "1.0.0",
+  "description": "Turn arbitrary strings into URL/filename-safe slugs with built-in transliteration (no dependencies).",
+  "type": "module",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    }
+  },
+  "files": ["index.js", "index.d.ts", "lib"],
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "test": "node --test \"test/*.test.js\"",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "keywords": ["slug", "slugify", "url", "transliterate"],
+  "license": "MIT"
+}

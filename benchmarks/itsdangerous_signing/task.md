@@ -5,6 +5,8 @@ be passed through untrusted channels (cookies, URLs, e-mails) and verified on th
 **wire-compatible** with the widely deployed `itsdangerous` 2.x token format, so tokens issued by
 existing services remain valid, and expose the same public API.
 
+The user documentation of the library being replaced is provided in `docs/*.rst`; it is normative.
+
 Public API (importable from the package root):
 * `Signer(secret_key, salt=b"itsdangerous.Signer", sep=".", key_derivation="django-concat",
   digest_method=hashlib.sha1, algorithm=None)` with `sign(value) -> bytes`, `unsign(signed) -> bytes`,
@@ -21,7 +23,9 @@ Public API (importable from the package root):
 * `Serializer(secret_key, salt=b"itsdangerous", serializer=json, signer=Signer, signer_kwargs=None,
   fallback_signers=None)` with `dumps/loads/dump/load/loads_unsafe/load_unsafe`; the default
   serializer is the standard `json` module with its default formatting (`json.dumps(obj)`, i.e. `", "`
-  and `": "` separators). `TimedSerializer` (`loads(..., max_age=, return_timestamp=)`).
+  and `": "` separators). The serializer's signer is created as `signer(secret_keys, salt=salt,
+  **signer_kwargs)` with exactly the user-supplied `signer_kwargs` (no extra defaults), so a plain
+  `Serializer` signs with the `Signer` defaults. `TimedSerializer` (`loads(..., max_age=, return_timestamp=)`).
   `URLSafeSerializer` / `URLSafeTimedSerializer`: payload is compact JSON (`separators=(",", ":")`), zlib-compressed if that is
   shorter (then prefixed with `.`), URL-safe base64 encoded without padding.
 * Exceptions: `BadData` → `BadSignature(message, payload)` → `BadTimeSignature(message, payload,

@@ -1,29 +1,29 @@
-# Requirements — itsdangerous (clean-room, spec-derived)
+# Requirements: itsdangerous (clean-room Python library)
 
 ## Product
-A pure-stdlib Python (>=3.9) library `itsdangerous` that signs data for untrusted channels and verifies it on return,
-wire-compatible with the itsdangerous 2.x token format and exposing the same public API (Signer, TimestampSigner,
-Serializer, TimedSerializer, URLSafeSerializer, URLSafeTimedSerializer, exceptions, helpers).
+A stdlib-only Python (>=3.9) package `itsdangerous` that signs data for untrusted channels and verifies it on return, wire-compatible with the itsdangerous 2.x token format and exposing the same public API (Signer, TimestampSigner, Serializer, TimedSerializer, URLSafeSerializer, URLSafeTimedSerializer, exception hierarchy, helpers). Classification: library; src layout, pytest suite, README, pyproject.toml.
 
 ## Acceptance criteria
-R1. `want_bytes(s, encoding="utf-8", errors="strict")` returns bytes for str (encoded) or bytes (unchanged).
-R2. `base64_encode(str|bytes)` -> URL-safe base64 bytes, no padding. `base64_decode(str|bytes)` re-pads, decodes; invalid input raises `BadData("Invalid base64-encoded data")`.
-R3. `Signer.__init__(secret_key, salt=b"itsdangerous.Signer", sep=".", key_derivation="django-concat", digest_method=hashlib.sha1, algorithm=None)`; salt/sep/keys coerced to bytes; `secret_key` may be str/bytes or iterable of keys (newest last); `salt=None` -> default salt; `sep` in URL-safe base64 alphabet raises `ValueError`.
-R4. Key derivation: concat=digest(salt+key); django-concat=digest(salt+b"signer"+key); hmac=HMAC(key,msg=salt,digest); none=key; unknown mode raises TypeError. Default digest sha1. `derive_key(secret_key=None)` uses newest key by default.
-R5. Signature = b64url-nopad(HMAC(derived key, value)); algorithm default HMAC with digest_method. `get_signature`, `sign` = value+sep+sig (bytes), `verify_signature(value, sig)` tries all keys (newest first) with constant-time compare (`hmac.compare_digest`); undecodable sig -> False.
-R6. `unsign`: no sep -> `BadSignature('No "." found in value')`; bad signature -> `BadSignature("Signature %r does not match", payload=value)`; returns value bytes. `validate` returns bool. `signed` may be str.
-R7. `TimestampSigner`: token `value.ts.sig`, ts = b64url-nopad of big-endian minimal-length int; signature covers `value.ts`; `get_timestamp()` = int(time.time()); `timestamp_to_datetime` -> aware UTC datetime. `unsign(signed, max_age=None, return_timestamp=False)`; errors: bad sig, `timestamp missing` (BadTimeSignature, payload) when no sep in the unsigned part, malformed timestamp -> `BadTimeSignature("Malformed timestamp")`, `Signature age %d > %d seconds` (SignatureExpired, date_signed); age<0 -> `Signature age %d < 0 seconds`; max_age boundary: expired only if age > max_age. `validate(signed, max_age=None)`.
-R8. Exceptions hierarchy: BadData(message) -> BadSignature(message, payload) -> BadTimeSignature(message, payload, date_signed) -> SignatureExpired; BadSignature -> BadHeader(message, payload, header, original_error); BadData -> BadPayload(message, original_error). `.message`, `.payload`, `.date_signed`, `str()` = message.
-R9. `Serializer(secret_key, salt=b"itsdangerous", serializer=json, signer=Signer, signer_kwargs=None, fallback_signers=None)`: `dumps(obj, salt=None)` -> signed (str for text serializers, bytes for binary); `loads(s, salt=None, **kw)`; `dump/load` file variants; `loads_unsafe/load_unsafe` -> `(ok, payload)`; default JSON compact (separators `,` `:`); signer built with Signer defaults (django-concat, sha1) unless signer_kwargs given; fallback signers (class, kwargs dict, or (class, kwargs) tuple) tried on failure; payload decode failure -> `BadPayload`; `is_text_serializer`.
-R10. `TimedSerializer.loads(s, max_age=None, return_timestamp=False, salt=None)`, `loads_unsafe`; default signer TimestampSigner.
-R11. `URLSafeSerializer`/`URLSafeTimedSerializer`: dump payload = compact JSON, zlib-compressed if shorter (then `.` prefix), b64url-nopad; load reverses; bad base64/zlib/json -> BadPayload.
-R12. Default Serializer wire format: `json_compact . sig` with Signer(salt=b"itsdangerous") with default django-concat key derivation. Known-answer vectors computed independently with hmac/hashlib in tests.
-R13. Package pure stdlib, pyproject.toml, `python -m pytest` passes, README.
+R1. `want_bytes(s, encoding="utf-8", errors="strict")` returns bytes for str, passes bytes through.
+R2. `base64_encode(str|bytes)` -> URL-safe base64 bytes, no padding; `base64_decode` accepts str/bytes, restores padding, raises `BadData("Invalid base64-encoded data")` on invalid input. Also `int_to_bytes` / `bytes_to_int` (big-endian minimal) helpers.
+R3. `Signer.__init__(secret_key, salt=b"itsdangerous.Signer", sep=".", key_derivation="django-concat", digest_method=hashlib.sha1, algorithm=None)`; key list accepted (newest last); str/bytes keys; salt/sep None-handling: salt None -> default salt. Sep in URL-safe base64 alphabet (A-Za-z0-9-_=) -> ValueError.
+R4. Key derivation: concat = digest(salt+key); django-concat = digest(salt+b"signer"+key); hmac = HMAC(key, msg=salt, digest); none = key; unknown -> TypeError. `derive_key(secret_key=None)` uses newest key by default.
+R5. Algorithm default `HMACAlgorithm(digest_method)`; `NoneAlgorithm` (empty signature) and `HMACAlgorithm` exist; `SigningAlgorithm.verify_signature` uses constant-time compare (hmac.compare_digest).
+R6. `get_signature(value)` -> bytes b64 no padding; `sign(value)` = value+sep+sig bytes; `verify_signature(value, sig)` tries all keys (newest first), returns bool, False on bad base64; `unsign` raises `BadSignature("No \"%s\" found in value")` when no sep, `BadSignature("Signature b'..' does not match", payload=value)` on mismatch; returns value bytes; `validate` returns bool.
+R7. `TimestampSigner`: token `value.b64(ts).sig`; sig covers value+sep+ts; `get_timestamp()` int(time.time()); `timestamp_to_datetime` -> aware UTC; `unsign(signed, max_age=None, return_timestamp=False)` errors: `BadTimeSignature("timestamp missing", payload=value)`, `BadTimeSignature("Malformed timestamp", payload, date_signed?)`, `SignatureExpired("Signature age %s > %s seconds")` with date_signed, and age<0 -> `SignatureExpired("Signature age %s < 0 seconds")`; max_age check is `age > max_age`. A bad signature raises BadSignature (BadTimeSignature if timestamp part present is not required). `validate(signed, max_age=None)`.
+R8. Exceptions: BadData(message; `.message`; str() = message); BadSignature(message, payload=None); BadTimeSignature(message, payload, date_signed); SignatureExpired subclass; BadHeader(message, payload, header, original_error) subclass of BadSignature; BadPayload(message, original_error) subclass of BadData.
+R9. `Serializer(secret_key, salt=b"itsdangerous", serializer=json, signer=Signer, signer_kwargs=None, fallback_signers=None, serializer_kwargs=None)`; `dumps` -> signed str (or bytes if serializer is binary); `loads` raises BadSignature on tamper, BadPayload on undecodable payload; `dump/load` for file-like; `loads_unsafe/load_unsafe` return `(ok, payload)` with payload still decoded on bad signature. Default serializer: `json.dumps(obj)` default separators. `make_signer(salt)`, `iter_unsigners`, fallback_signers entries may be class, dict, or (cls, kwargs) tuple. Salt None → default salt; signer_kwargs default key_derivation "hmac"? NO: default signer kwargs `{"key_derivation":"hmac","digest_method":sha1}` (2.x default) — assumed per 2.x Serializer.default_signer_kwargs.
+R10. `TimedSerializer.loads(s, max_age=None, return_timestamp=False, salt=None)`; uses TimestampSigner; `loads_unsafe` supports max_age.
+R11. `URLSafeSerializer`/`URLSafeTimedSerializer`: dumps payload = compact JSON, zlib-compress when strictly shorter (prefix `.`), b64 no padding; loads reverses; bad base64 / zlib -> BadPayload.
+R12. Rotation: list of keys works for Signer and Serializer; sign newest, accept any.
+R13. Constant-time comparison (`hmac.compare_digest`) used for signatures.
+R14. Known-answer vectors computed independently in tests via hashlib/hmac/base64 from format definition.
+R15. Packaging: pyproject.toml, `pip install -e .` and `pytest` work; stdlib only; `__version__` 2.x string; `py.typed` optional.
 
 ## Assumptions
-- Header-less (no JWS) — BadHeader exists only for API compatibility.
-- Serializer secret_key list rotation supported via Signer; `salt` in dumps overrides instance salt.
-- `Serializer.make_signer(salt)`; `iter_unsigners(salt)`.
+- Unspecified details follow the 2.x conventions (default_signer_kwargs hmac/sha1 for Serializer; Signer itself defaults django-concat).
+- Serializer `dumps` returns str when the serializer yields text, bytes when binary (is_text_serializer test: dumps({}) is str).
+- Hashes accept `hashlib.sha1` callable; `algorithm` overrides.
 
 ## Test strategy
-tests/ with pytest: known-answer vectors (R5,R12) using independent hmac computation; each key derivation (R4); tampering/expiry/rotation (R6,R7,R3); exceptions (R8); URL-safe compression (R11); helpers (R1,R2).
+- tests/test_signer.py (R3-R6, R12, R13, R14), test_timed.py (R7), test_serializer.py (R9, R10, R12), test_url_safe.py (R11), test_encoding.py (R1, R2, R8), all unit/pytest with monkeypatched time and independently computed vectors.
