@@ -1,0 +1,13 @@
+[project]
+name = "minbpe"
+version = "0.1.0"
+description = "Byte-level BPE tokenizers (Basic and Regex/GPT-4 style)"
+requires-python = ">=3.9"
+dependencies = ["regex>=2023.0.0"]
+
+[tool.setuptools]
+packages = ["minbpe"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

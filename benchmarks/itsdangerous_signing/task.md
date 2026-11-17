@@ -19,9 +19,10 @@ Public API (importable from the package root):
   `validate(signed, max_age=None)`; `get_timestamp()` uses `int(time.time())`; returned timestamps are
   timezone-aware UTC `datetime`s.
 * `Serializer(secret_key, salt=b"itsdangerous", serializer=json, signer=Signer, signer_kwargs=None,
-  fallback_signers=None)` with `dumps/loads/dump/load/loads_unsafe/load_unsafe`; the default JSON
-  serializer is compact (no spaces). `TimedSerializer` (`loads(..., max_age=, return_timestamp=)`).
-  `URLSafeSerializer` / `URLSafeTimedSerializer`: payload is the compact JSON, zlib-compressed if that is
+  fallback_signers=None)` with `dumps/loads/dump/load/loads_unsafe/load_unsafe`; the default
+  serializer is the standard `json` module with its default formatting (`json.dumps(obj)`, i.e. `", "`
+  and `": "` separators). `TimedSerializer` (`loads(..., max_age=, return_timestamp=)`).
+  `URLSafeSerializer` / `URLSafeTimedSerializer`: payload is compact JSON (`separators=(",", ":")`), zlib-compressed if that is
   shorter (then prefixed with `.`), URL-safe base64 encoded without padding.
 * Exceptions: `BadData` → `BadSignature(message, payload)` → `BadTimeSignature(message, payload,
   date_signed)` → `SignatureExpired`; `BadSignature` → `BadHeader(message, payload, header,

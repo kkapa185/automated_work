@@ -175,7 +175,7 @@ async def run_one(bench: dict[str, Any], force: bool) -> dict[str, Any]:
             )
             state = await orch.submit(task, start=False)
             task_id = state.task_id
-            entry.update({"task_id": task_id, "workspace": str(workspace), "started_at": time.time()})
+            entry.update({"task_id": task_id, "workspace": str(workspace), "started_at": time.time(), "done": False})
             save_state({name: entry})
             orch.start(task_id)
         summary = await orch.wait(task_id)

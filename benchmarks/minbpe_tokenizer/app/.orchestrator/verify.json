@@ -1,0 +1,6 @@
+{
+  "setup": ["python -m pip install -r requirements.txt"],
+  "test": ["python -m pytest -q"],
+  "build": ["python -m compileall -q minbpe train.py"],
+  "smoke": [{"command": "python train.py data/sample.txt --out-dir models"}]
+}

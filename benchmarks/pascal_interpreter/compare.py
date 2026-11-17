@@ -22,6 +22,8 @@ def main():
     for prog in progs:
         for flags in (["--stack"], []):
             r = run([sys.executable, str(ref_spi), str(prog), *flags], timeout=60)
+            if r.returncode != 0 and "Traceback" in (r.stderr or ""):
+                continue  # the reference itself crashes: behaviour undefined, not a valid comparison case
             g = run(["./spi", str(prog), *flags], cwd=a.app, timeout=60)
             same = g.stdout == r.stdout and (g.returncode == 0) == (r.returncode == 0)
             label = f"{prog.parent.name}/{prog.name} {' '.join(flags) or '(no flags)'}"

@@ -40,11 +40,13 @@ ENTER: PROGRAM Main
 CALL STACK
 1: PROGRAM Main
 
+
 ```
 i.e. `ENTER: <TYPE> <name>` or `LEAVE: <TYPE> <name>`, then `CALL STACK`, then the records from the top
 of the stack down, each as `<level>: <TYPE> <name>` followed by one line per variable/parameter in the
 order they were first assigned: three spaces, the name left-justified to 20 characters, `: `, the value
-(Python `str` formatting of int/float), then a blank line. Print the stack at `LEAVE` *before* popping.
+(Python `str` formatting of int/float). After the last record line come exactly **two** empty lines
+(byte-exact: `...1: PROGRAM Main\n\n\nLEAVE: ...`). Print the stack at `LEAVE` *before* popping.
 `--scope` additionally prints scope entry/exit and symbol table contents (free format).
 
 Deliverables: the interpreter, a test suite (lexer, parser, semantic analyzer, interpreter, CLI), README.
