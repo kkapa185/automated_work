@@ -95,3 +95,80 @@ def test_report_digest_truncation_and_empty():
     assert len(d) <= 2100 and "truncated" in d
     assert not VerificationReport.from_results([]).passed
     assert VerificationReport.from_results([CommandResult(command="c", exit_code=0)]).failure_digest() == "All verification checks passed."
+
+
+# --------------------------------------------------------------------------- verify.json contract
+import socket  # noqa: E402
+
+from verification import load_contract  # noqa: E402
+
+
+def write_contract(ws: Path, data) -> None:
+    (ws / ".orchestrator").mkdir(exist_ok=True)
+    (ws / ".orchestrator" / "verify.json").write_text(data if isinstance(data, str) else json.dumps(data))
+
+
+def free_port() -> int:
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+async def test_contract_full_flow(tmp_path: Path):
+    (tmp_path / "test_a.py").write_text("def test_ok():\n    assert True\n")
+    py = sys.executable
+    port = free_port()
+    write_contract(tmp_path, {
+        "setup": [f'{py} -c "open(\'setup.done\',\'w\').write(\'1\')"'],
+        "test": f"{py} -m pytest -q",
+        "build": [f"{py} -m py_compile test_a.py"],
+        "smoke": [f'{py} -c "print(42)"',
+                  {"command": f"{py} -m http.server {port} --bind 127.0.0.1", "url": f"http://127.0.0.1:{port}/", "timeout_s": 20}],
+    })
+    rep = await VerificationRunner().verify(str(tmp_path))
+    assert rep.passed, rep.failure_digest()
+    assert [r.kind for r in rep.results] == ["setup", "build", "test", "smoke", "smoke"]
+    assert (tmp_path / "setup.done").exists()
+    with socket.socket() as s:  # the smoke server was shut down
+        assert s.connect_ex(("127.0.0.1", port)) != 0
+
+
+async def test_contract_rejects_noop_and_missing_tests(tmp_path: Path):
+    write_contract(tmp_path, {"test": ["true", "echo ok"]})
+    rep = await VerificationRunner().verify(str(tmp_path))
+    assert not rep.passed and "no real test command" in rep.reason
+    write_contract(tmp_path, {"build": ["make"]})
+    assert "no real test command" in (await VerificationRunner().verify(str(tmp_path))).reason
+
+
+async def test_contract_invalid_json(tmp_path: Path):
+    write_contract(tmp_path, "{not json")
+    rep = await VerificationRunner().verify(str(tmp_path))
+    assert not rep.passed and "invalid" in rep.reason
+    assert load_contract(tmp_path / "nowhere") == (None, None)
+
+
+async def test_contract_setup_failure_stops(tmp_path: Path):
+    write_contract(tmp_path, {"setup": [f'{sys.executable} -c "raise SystemExit(4)"'], "test": [f"{sys.executable} -m pytest"]})
+    rep = await VerificationRunner().verify(str(tmp_path))
+    assert not rep.passed and len(rep.results) == 1 and rep.reason == "setup command failed"
+
+
+async def test_server_smoke_failures(tmp_path: Path):
+    port = free_port()
+    write_contract(tmp_path, {
+        "test": [f'{sys.executable} -c "pass"'],
+        "smoke": [{"command": f'{sys.executable} -c "raise SystemExit(3)"', "url": f"http://127.0.0.1:{port}/", "timeout_s": 5},
+                  {"command": f'{sys.executable} -c "import time; time.sleep(60)"', "url": f"http://127.0.0.1:{port}/", "timeout_s": 1}],
+    })
+    rep = await VerificationRunner(kill_grace_s=0.5).verify(str(tmp_path))
+    assert not rep.passed
+    early, silent = rep.results[1], rep.results[2]
+    assert "exited with code 3" in early.error
+    assert "did not answer" in silent.error
+
+
+async def test_explicit_commands_override_contract(tmp_path: Path):
+    write_contract(tmp_path, {"test": ["true"]})
+    rep = await VerificationRunner().verify(str(tmp_path), [f'{sys.executable} -c "pass"'])
+    assert rep.passed

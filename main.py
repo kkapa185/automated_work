@@ -66,8 +66,16 @@ def create_app(settings: Settings | None = None, orchestrator: TaskOrchestrator 
             raise HTTPException(404, f"task {task_id} not found") from None
 
     @app.get("/healthz")
-    async def healthz() -> dict[str, str]:
-        return {"status": "ok"}
+    async def healthz(request: Request) -> dict[str, Any]:
+        gate = orch(request).gate
+        return {
+            "status": "ok",
+            "usage_gate": {
+                "blocked": gate.is_blocked,
+                "blocked_until": gate.blocked_until.isoformat() if gate.blocked_until else None,
+                "limit_kind": gate.info.kind if gate.info else None,
+            },
+        }
 
     @app.post("/tasks", status_code=202, response_model=TaskCreated)
     async def submit_task(task: TaskInput, request: Request, task_id: str | None = Query(default=None)) -> TaskCreated:
@@ -189,13 +197,16 @@ def _print_event(ev: TaskEvent, verbose: bool) -> None:
 
 
 async def _cli_run(args: argparse.Namespace, settings: Settings) -> int:
+    if args.description_file:
+        from pathlib import Path
+        args.description = Path(args.description_file).read_text()
     o = build_orchestrator(settings)
     sources = [ContextSource.model_validate({"kind": k, "ref": r}) for k, r in (s.split(":", 1) for s in args.source)]
     task = TaskInput(
         description=args.description, workspace_path=args.workspace, repo_url=args.repo,
         verification_commands=args.verify or None, max_turns=args.max_turns,
         safety=SafetyLevel(args.safety), allowed_tools=args.allowed_tools.split(",") if args.allowed_tools else None,
-        context_sources=sources, auto_detect_sources=not args.no_detect,
+        context_sources=sources, auto_detect_sources=not args.no_detect, constraints=args.constraint,
     )
     state = await o.submit(task, task_id=args.task_id, start=False)
     print(f"task_id={state.task_id} workspace={state.workspace_path}", flush=True)
@@ -269,6 +280,8 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--safety", choices=[x.value for x in SafetyLevel], default=SafetyLevel.STANDARD.value)
     r.add_argument("--allowed-tools", help="comma separated; requires --safety custom")
     r.add_argument("--no-detect", action="store_true", help="disable automatic source detection")
+    r.add_argument("--constraint", action="append", default=[], help="extra rule injected into every prompt (repeatable)")
+    r.add_argument("--description-file", help="read the task description from a file (use '-' as description)")
     r.add_argument("-v", "--verbose", action="store_true", help="stream raw claude output")
 
     st = sub.add_parser("status", help="show a task's state")

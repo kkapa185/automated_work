@@ -83,6 +83,8 @@ def settings(tmp_path: Path, fake_claude: FakeClaude) -> Settings:
         max_transient_retries=3,
         backoff_base_s=0.01,
         backoff_max_s=0.05,
+        max_reviews=0,  # review turns are exercised explicitly in test_phases.py
+        usage_gate_poll_s=0.01,
     )
 
 

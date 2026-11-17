@@ -38,7 +38,8 @@ def payload(**kw):
 
 
 def test_health(api):
-    assert api.get("/healthz").json() == {"status": "ok"}
+    body = api.get("/healthz").json()
+    assert body["status"] == "ok" and body["usage_gate"]["blocked"] is False
 
 
 def test_submit_complete_and_inspect(api, fake_claude):

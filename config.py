@@ -37,14 +37,22 @@ class Settings(BaseModel):
     db_path: Path = Path("./orchestrator.db")
 
     # --- timeouts & budgets --------------------------------------------------
-    cli_timeout_s: float = 1800.0
+    cli_timeout_s: float = 3600.0
     verify_timeout_s: float = 900.0
     kill_grace_s: float = 5.0
-    max_turns: int = 5
+    max_turns: int = 8
+    max_reviews: int = 2  # requirement-review turns after verification first passes
     max_transient_retries: int = 3
     backoff_base_s: float = 2.0
     backoff_max_s: float = 60.0
     max_concurrent_tasks: int = 4
+
+    # --- subscription usage limits (5-hour / weekly) -------------------------
+    usage_limit_margin_s: float = 120.0
+    usage_probe_schedule_s: list[float] = Field(default_factory=lambda: [600.0, 1200.0, 2400.0, 3600.0])
+    usage_gate_poll_s: float = 60.0
+    # Environment variables removed before spawning the nested claude CLI (e.g. the parent session's identity).
+    cli_env_unset: list[str] = Field(default_factory=list)
     max_argv_prompt_bytes: int = 100_000  # larger prompts are piped via stdin (Linux MAX_ARG_STRLEN is 128KiB)
 
     # --- context sizing ------------------------------------------------------
@@ -110,6 +118,8 @@ class Settings(BaseModel):
                 continue
             if name in list_fields:
                 data[name] = [p.strip() for p in raw.split(",") if p.strip()]
+                if "float" in str(cls.model_fields[name].annotation):
+                    data[name] = [float(x) for x in data[name]]
             elif name in {"permission_mode", "model"} and raw.strip().lower() in {"", "none"}:
                 data[name] = None
             else:

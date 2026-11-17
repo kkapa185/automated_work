@@ -18,6 +18,7 @@ from connectors.base import backoff_delay
 from process import LineCallback, ProcessResult, run_process
 from registry import SessionInvariantError, SessionRegistry
 from schemas import ClaudeCLIResult, SafetyLevel, SessionState, TaskInput, TaskStatus, TurnRecord
+from usage_limits import UsageLimitInfo, parse_usage_limit
 
 log = logging.getLogger(__name__)
 
@@ -46,6 +47,23 @@ class ClaudeTransientError(ClaudeError):
 
 class ClaudeFatalError(ClaudeError):
     """Non-retryable: missing binary, auth failures, unknown non-zero exits."""
+
+
+class ClaudeUsageLimitError(ClaudeError):
+    """The account's 5-hour or weekly allowance is exhausted; retry the same turn after ``info.resets_at``."""
+
+    def __init__(self, message: str, info: UsageLimitInfo, *, result: ProcessResult | None = None):
+        super().__init__(message, result=result)
+        self.info = info
+
+
+def detect_usage_limit(proc: ProcessResult, parsed: ClaudeCLIResult | None) -> UsageLimitInfo | None:
+    """Only failed invocations are inspected, so an answer that merely *discusses* limits never matches."""
+    failed = proc.exit_code != 0 or parsed is None or parsed.is_error
+    if not failed:
+        return None
+    blob = "\n".join(x for x in (parsed.result if parsed else None, proc.stderr, proc.stdout if parsed is None else None) if x)
+    return parse_usage_limit(blob)
 
 
 @dataclass
@@ -164,7 +182,7 @@ class ClaudeSessionManager:
         return argv
 
     def _env(self, task: TaskInput) -> dict[str, str]:
-        env = dict(os.environ)
+        env = {k: v for k, v in os.environ.items() if k not in set(self.settings.cli_env_unset)}
         env.update(task.extra_env)
         return env
 
@@ -210,6 +228,10 @@ class ClaudeSessionManager:
                             f"claude returned session {parsed.session_id} while resuming {bound} for task {task_id}"
                         )
 
+                limit = detect_usage_limit(proc, parsed)
+                if limit is not None:
+                    raise ClaudeUsageLimitError(f"usage limit reached: {limit.message}", limit, result=proc)
+
                 err_cls = classify_failure(proc, parsed)
                 if err_cls is None:
                     assert parsed is not None
@@ -236,6 +258,7 @@ class ClaudeSessionManager:
                 cost_usd=parsed.total_cost_usd,
                 duration_s=time.monotonic() - t0,
                 attempts=attempt + 1,
+                permission_denials=[d for d in (parsed.model_extra or {}).get("permission_denials") or [] if isinstance(d, dict)],
             )
             new_state = await self.registry.record_turn(turn)
             return TurnOutcome(result=parsed, turn=turn, state=new_state)

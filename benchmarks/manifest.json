@@ -1,0 +1,11 @@
+{
+  "benchmarks": [
+    {"name": "crypto_price_prediction", "reference_repo": "https://github.com/khuangaf/CryptocurrencyPrediction",
+     "reference_path": "/home/user/reference/CryptocurrencyPrediction", "max_turns": 10, "compare_timeout_s": 14400},
+    {"name": "matlab_challenge_explorer", "reference_repo": "https://github.com/mathworks/MATLAB-Simulink-Challenge-Project-Hub",
+     "reference_path": "/home/user/reference/MATLAB-Simulink-Challenge-Project-Hub", "max_turns": 10},
+    {"name": "apollo11_agc_assembler", "reference_repo": "https://github.com/chrislgarry/Apollo-11",
+     "reference_path": "/home/user/reference/Apollo-11", "max_turns": 16, "cli_timeout_s": 5400,
+     "constraints": ["Do not download or consult Virtual AGC (virtualagc, yaYUL, ibiblio.org/apollo) sources, binaries or octal listings; derive the rope solely by assembling the provided sources."]}
+  ]
+}

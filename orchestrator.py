@@ -9,15 +9,18 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from claude_session import ClaudeError, ClaudeSessionManager, TurnOutcome
+from claude_session import ClaudeError, ClaudeSessionManager, ClaudeUsageLimitError, TurnOutcome
 from config import Settings
 from connectors import ContextHydrator
 from process import run_process
-from prompts import heal_prompt, implement_prompt, plan_prompt
+from prompts import (
+    heal_prompt, implement_prompt, parse_review_verdict, permission_denials_note, plan_prompt, review_prompt,
+)
 from registry import DuplicateTaskError, SessionInvariantError, SessionRegistry
 from schemas import (
     FinalSummary, SessionState, TaskEvent, TaskInput, TaskStatus, VerificationReport,
 )
+from usage_limits import Clock, UsageGate, compute_resume_at, utc_now
 from verification import VerificationRunner
 
 log = logging.getLogger(__name__)
@@ -74,6 +77,8 @@ class TaskOrchestrator:
         hydrator: ContextHydrator | None = None,
         verifier: VerificationRunner | None = None,
         bus: EventBus | None = None,
+        gate: UsageGate | None = None,
+        clock: Clock = utc_now,
     ):
         self.settings = settings
         self.registry = registry
@@ -83,7 +88,10 @@ class TaskOrchestrator:
             timeout_s=settings.verify_timeout_s, kill_grace_s=settings.kill_grace_s
         )
         self.bus = bus or EventBus(registry)
+        self.clock = clock
+        self.gate = gate or UsageGate(clock=clock, poll_s=settings.usage_gate_poll_s)
         self._running: dict[str, asyncio.Task[FinalSummary]] = {}
+        self._pending_denials: dict[str, list[dict[str, Any]]] = {}
         self._sem = asyncio.Semaphore(settings.max_concurrent_tasks)
 
     # ------------------------------------------------------------------ public API
@@ -135,9 +143,15 @@ class TaskOrchestrator:
         return True
 
     async def resume_interrupted(self) -> list[str]:
-        """Re-enter every non-terminal task (e.g. after a crash) on its existing session."""
+        """Re-enter every non-terminal task (e.g. after a crash) on its existing session.
+
+        Tasks that were paused on a usage limit re-arm the shared gate with their persisted
+        ``resume_at``, so the restarted process sleeps until the reset instead of hammering the API.
+        """
         ids = []
         for st in await self.registry.list_resumable():
+            if st.status == TaskStatus.PAUSED_USAGE_LIMIT and st.resume_at is not None:
+                self.gate.block(st.resume_at)
             if not self.is_running(st.task_id):
                 self.start(st.task_id)
                 ids.append(st.task_id)
@@ -151,21 +165,60 @@ class TaskOrchestrator:
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await t
 
-    # ------------------------------------------------------------------ state machine
+    # ------------------------------------------------------------------ helpers
     async def _set_status(self, task_id: str, status: TaskStatus, message: str = "", **data: Any) -> None:
         await self.registry.update_status(task_id, status)
         await self.bus.publish(task_id, "status", message or status.value, status, **data)
 
+    async def _wait_for_gate(self, task_id: str, phase: TaskStatus, reason: str) -> None:
+        """Park the task until the shared usage gate opens, persisting the pause for restarts."""
+        until = self.gate.blocked_until
+        if until is None:
+            return
+        await self.registry.set_pause(task_id, until, phase, reason)
+        await self.bus.publish(
+            task_id, "paused", f"usage limit: waiting until {until.isoformat()}", TaskStatus.PAUSED_USAGE_LIMIT,
+            resume_at=until.isoformat(), phase=phase.value, reason=reason,
+            limit_kind=self.gate.info.kind if self.gate.info else None,
+        )
+        waited = await self.gate.wait()
+        await self.registry.clear_pause(task_id, phase)
+        await self.bus.publish(task_id, "resumed", f"usage limit reset; continuing {phase.value}", phase,
+                               waited_s=round(waited, 1))
+
     async def _turn(self, task_id: str, prompt: str, phase: TaskStatus) -> TurnOutcome:
+        """One logical turn. Usage-limit pauses re-send the same prompt to the same session afterwards
+        and consume neither the turn budget nor transient retries."""
         def on_line(stream: str, line: str) -> None:
             self.bus.publish_ephemeral(task_id, "output", line, stream=stream, phase=phase.value)
 
-        outcome = await self.sessions.send(task_id, prompt, phase, on_line=on_line)
+        prompt = prompt + permission_denials_note(self._pending_denials.pop(task_id, []))
+        consecutive_limits = 0
+        while True:
+            if self.gate.is_blocked:
+                await self._wait_for_gate(task_id, phase, "usage limit reached by another task")
+            try:
+                outcome = await self.sessions.send(task_id, prompt, phase, on_line=on_line)
+            except ClaudeUsageLimitError as exc:
+                consecutive_limits += 1
+                now = self.clock()
+                resume_at = compute_resume_at(
+                    exc.info, now, consecutive_limits, self.settings.usage_limit_margin_s,
+                    self.settings.usage_probe_schedule_s,
+                )
+                self.gate.block(resume_at, exc.info)
+                log.warning("task %s: %s; pausing until %s", task_id, exc.info.message, resume_at.isoformat())
+                await self._wait_for_gate(task_id, phase, exc.info.message)
+                continue
+            break
+        if outcome.turn.permission_denials:
+            self._pending_denials[task_id] = outcome.turn.permission_denials
         await self.bus.publish(
             task_id, "turn", f"turn {outcome.turn.turn_index} ({phase.value}) finished", phase,
             turn_index=outcome.turn.turn_index, session_id=outcome.result.session_id, resumed=outcome.turn.resumed,
             is_error=outcome.result.is_error, attempts=outcome.turn.attempts,
             tokens=outcome.result.usage.total, cost_usd=outcome.result.total_cost_usd,
+            permission_denials=len(outcome.turn.permission_denials),
             response_preview=(outcome.result.result or "")[:500],
         )
         return outcome
@@ -177,8 +230,8 @@ class TaskOrchestrator:
         await self.bus.publish(
             task_id, "verification", "verification passed" if report.passed else "verification failed",
             TaskStatus.VERIFYING, passed=report.passed, reason=report.reason,
-            results=[{"command": r.command, "exit_code": r.exit_code, "timed_out": r.timed_out,
-                      "duration_s": round(r.duration_s, 3)} for r in report.results],
+            results=[{"command": r.command, "kind": r.kind, "exit_code": r.exit_code, "timed_out": r.timed_out,
+                      "duration_s": round(r.duration_s, 3), "error": r.error} for r in report.results],
         )
         return report
 
@@ -195,6 +248,7 @@ class TaskOrchestrator:
             if res.exit_code != 0:
                 raise OrchestratorError(f"git clone failed ({res.exit_code}): {res.stderr.strip()[-1000:]}")
 
+    # ------------------------------------------------------------------ state machine
     async def run(self, task_id: str) -> FinalSummary:
         async with self._sem:
             return await self._run(task_id)
@@ -206,15 +260,19 @@ class TaskOrchestrator:
             if summary is not None:
                 return summary
         task = state.task_input
+        cons = task.constraints
         max_turns = task.max_turns or self.settings.max_turns
+        max_reviews = self.settings.max_reviews
         report: VerificationReport | None = None
         last_message: str | None = None
         failure: str | None = None
+        verdict: str | None = None
         final_status = TaskStatus.FAILED
         try:
             await self._prepare_workspace(state)
-            fresh = state.session_id is None
-            if fresh:
+            history = await self.registry.turns(task_id)
+            phases = [t.phase for t in history]
+            if state.session_id is None:
                 # No session exists yet, so (re)starting from hydration cannot create a duplicate session.
                 await self._set_status(task_id, TaskStatus.HYDRATING)
                 ctx = await self.hydrator.hydrate(
@@ -227,27 +285,50 @@ class TaskOrchestrator:
                 )
                 await self._set_status(task_id, TaskStatus.PLANNING)
                 out = await self._turn(
-                    task_id, plan_prompt(ctx.payload, task.verification_commands, state.workspace_path),
+                    task_id, plan_prompt(ctx.payload, task.verification_commands, state.workspace_path, cons),
                     TaskStatus.PLANNING,
                 )
                 last_message = out.result.result
                 state = out.state
+                phases.append(TaskStatus.PLANNING)
             else:
                 await self.bus.publish(task_id, "resumed", f"resuming session {state.session_id}", state.status,
                                        session_id=state.session_id, turn_count=state.turn_count)
 
-            if state.turn_count <= 1 and state.turn_count < max_turns:
+            if TaskStatus.IMPLEMENTING not in phases and state.turn_count < max_turns:
                 await self._set_status(task_id, TaskStatus.IMPLEMENTING)
-                out = await self._turn(task_id, implement_prompt(task.verification_commands), TaskStatus.IMPLEMENTING)
+                out = await self._turn(task_id, implement_prompt(task.verification_commands, cons),
+                                       TaskStatus.IMPLEMENTING)
                 last_message = out.result.result
                 state = out.state
 
-            heal_attempt = 0
+            reviews = [t for t in history if t.phase == TaskStatus.REVIEWING]
+            reviews_done = len(reviews)
+            # A review that changed nothing ("PASS") means the next green verification completes the task.
+            review_clean = bool(reviews) and parse_review_verdict(reviews[-1].response) == "PASS"
+            if reviews:
+                verdict = parse_review_verdict(reviews[-1].response)
+            heal_attempt = sum(1 for t in history if t.phase == TaskStatus.HEALING)
             while True:
                 report = await self._verify(task_id, state)
                 if report.passed:
-                    final_status = TaskStatus.COMPLETED
-                    break
+                    if review_clean or reviews_done >= max_reviews:
+                        final_status = TaskStatus.COMPLETED
+                        break
+                    if state.turn_count >= max_turns:
+                        final_status = TaskStatus.COMPLETED
+                        verdict = verdict or "SKIPPED_BUDGET"
+                        break
+                    reviews_done += 1
+                    await self._set_status(task_id, TaskStatus.REVIEWING, f"requirements review {reviews_done}")
+                    out = await self._turn(task_id, review_prompt(reviews_done, max_reviews, cons),
+                                           TaskStatus.REVIEWING)
+                    last_message = out.result.result
+                    state = out.state
+                    verdict = parse_review_verdict(out.result.result)
+                    review_clean = verdict == "PASS"
+                    continue
+                review_clean = False
                 if state.turn_count >= max_turns:
                     failure = f"max_turns_exhausted: verification still failing after {state.turn_count} turns"
                     break
@@ -255,14 +336,15 @@ class TaskOrchestrator:
                 await self._set_status(task_id, TaskStatus.HEALING, f"self-healing attempt {heal_attempt}")
                 out = await self._turn(
                     task_id,
-                    heal_prompt(report, heal_attempt, max_turns - state.turn_count - 1, self.settings.max_feedback_chars),
+                    heal_prompt(report, heal_attempt, max_turns - state.turn_count - 1,
+                                self.settings.max_feedback_chars, cons),
                     TaskStatus.HEALING,
                 )
                 last_message = out.result.result
                 state = out.state
         except asyncio.CancelledError:
             final_status, failure = TaskStatus.CANCELLED, "cancelled"
-            await self._finish(task_id, final_status, report, last_message, failure, max_turns)
+            await self._finish(task_id, final_status, report, last_message, failure, max_turns, verdict)
             raise
         except SessionInvariantError as exc:
             failure = f"session_invariant_violation: {exc}"
@@ -274,10 +356,11 @@ class TaskOrchestrator:
         if last_message is None:
             turns = await self.registry.turns(task_id)
             last_message = turns[-1].response if turns else None
-        return await self._finish(task_id, final_status, report, last_message, failure, max_turns)
+        return await self._finish(task_id, final_status, report, last_message, failure, max_turns, verdict)
 
     async def _finish(self, task_id: str, status: TaskStatus, report: VerificationReport | None,
-                      last_message: str | None, failure: str | None, max_turns: int) -> FinalSummary:
+                      last_message: str | None, failure: str | None, max_turns: int,
+                      review_verdict: str | None = None) -> FinalSummary:
         async def write() -> FinalSummary:
             await self.registry.update_status(task_id, status, last_error=failure)
             state = await self.registry.get(task_id)
@@ -285,7 +368,7 @@ class TaskOrchestrator:
                 task_id=task_id, session_id=state.session_id, status=status, turns_used=state.turn_count,
                 max_turns=max_turns, token_usage=state.token_usage, total_cost_usd=state.total_cost_usd,
                 verification=report, final_message=last_message, failure_reason=failure,
-                workspace_path=state.workspace_path,
+                workspace_path=state.workspace_path, review_verdict=review_verdict,
             )
             await self.registry.set_summary(summary)
             await self.bus.publish(task_id, status.value.lower(), failure or "all verification checks passed", status,

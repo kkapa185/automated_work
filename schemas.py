@@ -20,6 +20,8 @@ class TaskStatus(str, Enum):
     IMPLEMENTING = "IMPLEMENTING"
     VERIFYING = "VERIFYING"
     HEALING = "HEALING"
+    REVIEWING = "REVIEWING"
+    PAUSED_USAGE_LIMIT = "PAUSED_USAGE_LIMIT"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
     CANCELLED = "CANCELLED"
@@ -78,6 +80,9 @@ class TaskInput(BaseModel):
     safety: SafetyLevel = SafetyLevel.STANDARD
     allowed_tools: list[str] | None = Field(default=None, description="Only honoured with safety=custom.")
     extra_env: dict[str, str] = Field(default_factory=dict)
+    constraints: list[str] = Field(
+        default_factory=list, description="Extra non-negotiable rules injected into every phase prompt."
+    )
 
     @field_validator("verification_commands")
     @classmethod
@@ -182,6 +187,8 @@ class SessionState(BaseModel):
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
     last_error: str | None = None
+    resume_at: datetime | None = None
+    paused_phase: TaskStatus | None = None
     task_input: TaskInput
 
 
@@ -198,6 +205,7 @@ class TurnRecord(BaseModel):
     cost_usd: float | None = None
     duration_s: float = 0.0
     attempts: int = 1
+    permission_denials: list[dict[str, Any]] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=utcnow)
 
 
@@ -206,6 +214,7 @@ class TurnRecord(BaseModel):
 
 class CommandResult(BaseModel):
     command: str
+    kind: str = "check"
     exit_code: int | None
     stdout: str = ""
     stderr: str = ""
@@ -283,6 +292,7 @@ class FinalSummary(BaseModel):
     verification: VerificationReport | None
     final_message: str | None
     failure_reason: str | None = None
+    review_verdict: str | None = None
     workspace_path: str
     finished_at: datetime = Field(default_factory=utcnow)
 

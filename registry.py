@@ -25,6 +25,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     task_input     TEXT NOT NULL,
     last_error     TEXT,
     summary        TEXT,
+    resume_at      TEXT,
+    paused_phase   TEXT,
     created_at     TEXT NOT NULL,
     updated_at     TEXT NOT NULL
 );
@@ -73,6 +75,10 @@ class SessionRegistry:
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.execute("PRAGMA foreign_keys=ON")
             self._conn.executescript(SCHEMA)
+            cols = {r["name"] for r in self._conn.execute("PRAGMA table_info(sessions)").fetchall()}
+            for col in ("resume_at", "paused_phase"):  # forward migration for databases created before v1.1
+                if col not in cols:
+                    self._conn.execute(f"ALTER TABLE sessions ADD COLUMN {col} TEXT")
 
     def close(self) -> None:
         with self._lock:
@@ -98,6 +104,8 @@ class SessionRegistry:
             total_cost_usd=row["total_cost_usd"],
             task_input=TaskInput.model_validate_json(row["task_input"]),
             last_error=row["last_error"],
+            resume_at=datetime.fromisoformat(row["resume_at"]) if row["resume_at"] else None,
+            paused_phase=TaskStatus(row["paused_phase"]) if row["paused_phase"] else None,
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
         )
@@ -185,6 +193,25 @@ class SessionRegistry:
             self._conn.execute(
                 "UPDATE sessions SET status=?, last_error=COALESCE(?, last_error), updated_at=? WHERE task_id=?",
                 (status.value, last_error, utcnow().isoformat(), task_id),
+            )
+        await self._run(op)
+
+    async def set_pause(self, task_id: str, resume_at: datetime, phase: TaskStatus, reason: str) -> None:
+        """Persist a usage-limit pause so a restarted process knows when to continue."""
+        def op() -> None:
+            self._get_row(task_id)
+            self._conn.execute(
+                "UPDATE sessions SET status=?, resume_at=?, paused_phase=?, last_error=?, updated_at=? WHERE task_id=?",
+                (TaskStatus.PAUSED_USAGE_LIMIT.value, resume_at.isoformat(), phase.value, reason,
+                 utcnow().isoformat(), task_id),
+            )
+        await self._run(op)
+
+    async def clear_pause(self, task_id: str, status: TaskStatus) -> None:
+        def op() -> None:
+            self._conn.execute(
+                "UPDATE sessions SET status=?, resume_at=NULL, paused_phase=NULL, updated_at=? WHERE task_id=?",
+                (status.value, utcnow().isoformat(), task_id),
             )
         await self._run(op)
 
