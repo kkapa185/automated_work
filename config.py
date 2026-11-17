@@ -59,6 +59,8 @@ class Settings(BaseModel):
     # Choose the session id ourselves (`--session-id`) and persist it before the first call, so that a
     # first turn that times out or crashes before printing JSON is retried on the SAME session.
     preassign_session_id: bool = True
+    # While a (possibly hour-long) turn runs, publish workspace activity so observers see progress.
+    heartbeat_interval_s: float = 60.0
     max_argv_prompt_bytes: int = 100_000  # larger prompts are piped via stdin (Linux MAX_ARG_STRLEN is 128KiB)
 
     # --- context sizing ------------------------------------------------------

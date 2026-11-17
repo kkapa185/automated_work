@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -24,6 +26,29 @@ from usage_limits import Clock, UsageGate, compute_resume_at, utc_now
 from verification import VerificationRunner
 
 log = logging.getLogger(__name__)
+
+HEARTBEAT_SKIP_DIRS = frozenset({".git", "node_modules", ".venv", "venv", "__pycache__", "target", ".pytest_cache", "dist", "build"})
+
+
+def workspace_activity(root: str, max_files: int = 50_000) -> dict[str, Any]:
+    """Cheap snapshot of a workspace: file count, total bytes and the most recently modified file."""
+    files = size = 0
+    newest, newest_path = 0.0, ""
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in HEARTBEAT_SKIP_DIRS]
+        for fn in filenames:
+            fp = os.path.join(dirpath, fn)
+            try:
+                st = os.stat(fp)
+            except OSError:
+                continue
+            files += 1
+            size += st.st_size
+            if st.st_mtime > newest:
+                newest, newest_path = st.st_mtime, os.path.relpath(fp, root)
+            if files >= max_files:
+                return {"files": files, "bytes": size, "last_modified": newest_path, "last_modified_at": newest}
+    return {"files": files, "bytes": size, "last_modified": newest_path, "last_modified_at": newest}
 
 TERMINAL_EVENT_TYPES = frozenset({"completed", "failed", "cancelled"})
 
@@ -194,6 +219,32 @@ class TaskOrchestrator:
 
         prompt = prompt + permission_denials_note(self._pending_denials.pop(task_id, []))
         consecutive_limits = 0
+        hb = asyncio.create_task(self._heartbeat(task_id, phase))
+        try:
+            return await self._turn_inner(task_id, prompt, phase, on_line, consecutive_limits)
+        finally:
+            hb.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await hb
+
+    async def _heartbeat(self, task_id: str, phase: TaskStatus) -> None:
+        interval = self.settings.heartbeat_interval_s
+        if interval <= 0:
+            return
+        state = await self.registry.get(task_id)
+        start = time.monotonic()
+        while True:
+            await asyncio.sleep(interval)
+            act = await asyncio.to_thread(workspace_activity, state.workspace_path)
+            elapsed = round(time.monotonic() - start)
+            self.bus.publish_ephemeral(
+                task_id, "heartbeat", f"{phase.value} running for {elapsed}s; workspace has {act['files']} files",
+                phase=phase.value, elapsed_s=elapsed, **act,
+            )
+            log.info("task %s: %s %ss, %d files, last change %s", task_id, phase.value, elapsed, act["files"],
+                     act["last_modified"])
+
+    async def _turn_inner(self, task_id: str, prompt: str, phase: TaskStatus, on_line, consecutive_limits: int) -> TurnOutcome:
         while True:
             if self.gate.is_blocked:
                 await self._wait_for_gate(task_id, phase, "usage limit reached by another task")

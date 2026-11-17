@@ -44,6 +44,48 @@ full-jitter exponential backoff. Retries do not use up `max_turns`. Fatal errors
 retried. On timeout or cancellation the CLI's whole process group gets SIGTERM, then SIGKILL, and is reaped, so
 no zombie processes are left.
 
+## Usage limits (5-hour and weekly)
+
+When the CLI reports an exhausted subscription allowance, for example
+`You've hit your session limit · resets 3pm (America/Los_Angeles)`,
+`You've hit your weekly limit · resets Mon 9am` or `usage limit reached|<epoch>`
+(see `usage_limits.py`), the orchestrator:
+* parses the reset time (epoch, ISO, `resets in 2h 15m`, clock time with weekday/date/time zone) and adds
+  a 2-minute margin. If no reset time can be parsed, it probes on an escalating schedule
+  (`ORCH_USAGE_PROBE_SCHEDULE_S`, default 10m, 20m, 40m, 60m);
+* sets status `PAUSED_USAGE_LIMIT` and persists `resume_at` and the paused phase;
+* blocks every task on a shared `UsageGate`, so no calls are wasted;
+* re-sends the same turn to the same session after the reset. A pause consumes neither turns nor
+  transient retries.
+A restarted process re-arms the gate from the persisted `resume_at` and sleeps until then. `GET /healthz`
+shows the gate state.
+
+## Requirements, verification contract and review
+
+* **Plan** writes `.orchestrator/requirements.md`: the product statement, numbered acceptance criteria,
+  assumptions, and a test strategy chosen for the kind of project Claude classified it as.
+* **Implement** also writes `.orchestrator/verify.json` (`setup`, `test`, `build`, `lint`, `smoke`). A smoke
+  entry with a `url` starts a server and waits until the URL answers. Explicit `verification_commands`
+  take precedence over the contract, which takes precedence over auto-detection. No-op test commands are
+  rejected.
+* **Review**: after the gate first passes, up to `ORCH_MAX_REVIEWS` turns audit the product against the
+  requirements by running it for real. A task completes only after a review that changed nothing
+  (`REVIEW_VERDICT: PASS`), or when the review or turn budget is used up while verification still passes.
+* Permission denials reported by the CLI are fed into the next prompt. Task `constraints` are repeated in
+  every prompt.
+* During long turns, `heartbeat` events report elapsed time and workspace activity.
+
+## Session-id pre-assignment
+The first turn passes `--session-id <uuid>` with an id persisted *before* the call. If that turn times out
+or crashes before printing JSON, the retry uses the same id. If the CLI answers "already in use", the
+orchestrator adopts the id and resumes. Either way the one-task, one-session invariant holds even for
+failed first turns and process restarts. The nested CLI runs with `--strict-mcp-config`, so the account's
+MCP connectors are not loaded.
+
+## Benchmarks
+`benchmarks/` holds ticket-style specs of real GitHub projects plus hidden comparison harnesses that run
+the reference project and the generated application on the same inputs. See `benchmarks/README.md`.
+
 ## Layout
 
 ```

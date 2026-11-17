@@ -207,3 +207,28 @@ async def test_plan_prompt_requires_requirements_and_contract(settings, registry
     plan, impl = prompts(fake_claude)[:2]
     assert ".orchestrator/requirements.md" in plan and "acceptance criteria" in plan
     assert ".orchestrator/verify.json" in impl
+
+
+async def test_heartbeats_published_during_long_turns(settings, registry, sleeps, fake_claude):
+    fake_claude.set_scenario({"session_id": SID, "calls": [{"sleep": 1.2, "write": {"a.txt": "x"}}, PASS]})
+    orch, _ = make(settings, registry, sleeps, heartbeat_interval_s=0.3)
+    st = await orch.submit(task(), start=False)
+    q = orch.bus.subscribe(st.task_id)
+    await orch.run(st.task_id)
+    beats = []
+    while not q.empty():
+        e = q.get_nowait()
+        if e.type == "heartbeat":
+            beats.append(e)
+    assert len(beats) >= 2
+    assert beats[0].data["phase"] == "PLANNING" and "files" in beats[0].data and beats[0].data["elapsed_s"] >= 0
+
+
+def test_workspace_activity_skips_heavy_dirs(tmp_path):
+    from orchestrator import workspace_activity
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "m.py").write_text("print(1)")
+    (tmp_path / "node_modules" / "x").mkdir(parents=True)
+    (tmp_path / "node_modules" / "x" / "big.js").write_text("y" * 1000)
+    act = workspace_activity(str(tmp_path))
+    assert act["files"] == 1 and act["bytes"] == 8 and act["last_modified"] == "src/m.py"
