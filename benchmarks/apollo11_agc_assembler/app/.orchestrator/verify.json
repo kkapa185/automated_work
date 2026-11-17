@@ -1,0 +1,10 @@
+{
+  "setup": ["python3 --version"],
+  "test": ["python3 -m unittest discover -s tests"],
+  "build": ["python3 -m compileall -q agclib agcasm"],
+  "lint": [],
+  "smoke": [
+    {"command": "./agcasm assemble agc_source/Comanche055/MAIN.agc -o out/Comanche055.binsource --symbols out/Comanche055.symbols.json --listing out/Comanche055.lst"},
+    {"command": "./agcasm assemble agc_source/Luminary099/MAIN.agc -o out/Luminary099.binsource --symbols out/Luminary099.symbols.json --listing out/Luminary099.lst"}
+  ]
+}

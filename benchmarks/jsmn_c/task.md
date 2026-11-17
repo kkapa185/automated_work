@@ -24,14 +24,21 @@ Semantics:
   has a value). Primitives are numbers, `true`, `false`, `null` (and, in non-strict mode, any other
   unquoted run of characters). Tokens are emitted in document order.
 * `jsmn_parse` returns the number of tokens used, or a negative `jsmnerr`. With `tokens == NULL` it
-  returns the number of tokens that *would* be needed (counting mode). Parsing is resumable: calling it
+  returns the number of tokens that *would* be needed (counting mode). Counting mode is a fast scan:
+  checks that need the token array (matching a closing bracket to its opener, detecting unclosed
+  objects/arrays at the end of input, key/value bookkeeping) are skipped, so for many malformed inputs
+  it returns the count of tokens seen so far instead of an error. Character-level errors such as
+  invalid escapes or illegal characters are still reported. Parsing is resumable: calling it
   again with the same parser and a longer buffer continues where it stopped (`JSMN_ERROR_PART` means
   more data is needed; `JSMN_ERROR_NOMEM` means more tokens are needed and the caller may grow the
   array and call again).
 * String escapes `\" \/ \\ \b \f \r \n \t \uXXXX` are validated (not decoded); invalid escapes or
   unterminated structures are errors. Unmatched closing brackets are `JSMN_ERROR_INVAL`.
-* `JSMN_STRICT` mode: primitives must be valid JSON literals/numbers and may not be object keys, and
-  primitives must be followed by a delimiter. `JSMN_PARENT_LINKS` mode records `parent` (index or -1),
+* `JSMN_STRICT` mode is a *lexical* strictness, not full JSON validation: a primitive must start with
+  `-`, a digit, `t`, `f` or `n` (any other unquoted character is `JSMN_ERROR_INVAL`), but its spelling is
+  not checked (`tru`, `01`, `-` are accepted as primitives); a primitive must be terminated by whitespace,
+  `,`, `]` or `}` (`:` is not a terminator; a primitive that runs to the end of the input is
+  `JSMN_ERROR_PART`); objects and arrays cannot be object keys; primitives cannot be object keys. `JSMN_PARENT_LINKS` mode records `parent` (index or -1),
   which also makes closing-bracket matching O(1) per level.
 
 Deliverables: `jsmn.h`, a `Makefile` with `test` building the test-suite in all four configurations

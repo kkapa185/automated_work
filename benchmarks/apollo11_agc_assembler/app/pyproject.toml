@@ -1,0 +1,9 @@
+[project]
+name = "agcasm"
+version = "1.0.0"
+description = "Block II Apollo Guidance Computer assembler"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.setuptools]
+packages = ["agclib"]

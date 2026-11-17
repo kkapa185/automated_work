@@ -55,11 +55,15 @@ def main():
                 cc = run(["cc", "-O1", *flags, "fz.c", "-o", "fz_" + label], cwd=d, timeout=120)
                 rr = run(["./fz_" + label], cwd=d, input=data.decode("latin-1"), timeout=60) if cc.returncode == 0 else cc
                 outs[label] = rr.stdout.splitlines()
-            same = sum(x == y for x, y in zip(outs["ref"], outs["app"]))
             total = len(outs["ref"])
-            bad = [i for i, (x, y) in enumerate(zip(outs["ref"], outs["app"])) if x != y][:3]
-            checks.append(check(f"differential fuzz identical [{cfg}]", total > 0 and same == total and len(outs["app"]) == total,
-                                f"{same}/{total} first mismatches {bad}"))
+            split = lambda line: line.rsplit(" count=", 1) if " count=" in line else [line, ""]
+            toks = sum(split(x)[0] == split(y)[0] for x, y in zip(outs["ref"], outs["app"]))
+            cnts = sum(split(x)[1] == split(y)[1] for x, y in zip(outs["ref"], outs["app"]))
+            bad = [i for i, (x, y) in enumerate(zip(outs["ref"], outs["app"])) if split(x)[0] != split(y)[0]][:3]
+            checks.append(check(f"differential fuzz: return code + token stream identical [{cfg}]",
+                                total > 0 and toks == total and len(outs["app"]) == total, f"{toks}/{total} first mismatches {bad}"))
+            checks.append(check(f"differential fuzz: counting mode (tokens=NULL) identical [{cfg}]",
+                                total > 0 and cnts == total, f"{cnts}/{total}"))
     w = run(["cc", "-std=c89", "-pedantic", "-Wall", "-Wextra", "-Werror", "-fsyntax-only", "-x", "c", str(hdr)], timeout=60)
     checks.append(check("header compiles as strict C89 with -Wall -Wextra -Werror", w.returncode == 0, w.stderr[-400:]))
     mk = run(["make", "test"], cwd=app, timeout=300)
