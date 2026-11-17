@@ -1,0 +1,9 @@
+Metadata-Version: 2.4
+Name: micrograd
+Version: 0.1.0
+Summary: Minimal scalar autograd engine and neural-network library for teaching backpropagation
+Requires-Python: >=3.8
+Provides-Extra: test
+Requires-Dist: pytest>=7; extra == "test"
+Provides-Extra: torch
+Requires-Dist: torch; extra == "torch"

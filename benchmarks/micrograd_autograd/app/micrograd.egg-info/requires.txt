@@ -1,0 +1,6 @@
+
+[test]
+pytest>=7
+
+[torch]
+torch

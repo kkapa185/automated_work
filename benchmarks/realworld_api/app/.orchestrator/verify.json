@@ -1,0 +1,8 @@
+{
+  "setup": ["python3 -m pip install -q -r requirements-dev.txt"],
+  "test": ["python3 -m pytest -q tests"],
+  "build": ["python3 -m compileall -q conduit serve"],
+  "smoke": [
+    {"command": "./serve --port 18765", "url": "http://127.0.0.1:18765/api/tags", "timeout_s": 60}
+  ]
+}

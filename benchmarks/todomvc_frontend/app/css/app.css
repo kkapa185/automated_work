@@ -1,0 +1,4 @@
+/* App-specific overrides (kept minimal). */
+.todoapp [hidden] {
+	display: none !important;
+}

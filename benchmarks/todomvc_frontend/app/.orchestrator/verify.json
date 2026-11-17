@@ -1,0 +1,8 @@
+{
+  "setup": ["npm install"],
+  "test": ["npx playwright test"],
+  "build": ["node --check serve"],
+  "smoke": [
+    {"command": "./serve --port 18765", "url": "http://127.0.0.1:18765/", "timeout_s": 60}
+  ]
+}
