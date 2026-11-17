@@ -1,6 +1,8 @@
 {
   "setup": ["python3 --version"],
-  "test": ["python3 -m unittest discover -s tests -t ."],
-  "build": ["python3 -m compileall -q spi_interp"],
-  "smoke": [{"command": "./spi examples/nested.pas --stack --scope"}]
+  "test": ["python3 -m unittest discover -s tests -v"],
+  "build": ["python3 -m py_compile spi.py"],
+  "smoke": [
+    {"command": "python3 spi examples/nested.pas --stack --scope"}
+  ]
 }

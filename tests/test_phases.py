@@ -232,3 +232,19 @@ def test_workspace_activity_skips_heavy_dirs(tmp_path):
     (tmp_path / "node_modules" / "x" / "big.js").write_text("y" * 1000)
     act = workspace_activity(str(tmp_path))
     assert act["files"] == 1 and act["bytes"] == 8 and act["last_modified"] == "src/m.py"
+
+
+async def test_restart_after_reset_time_clears_stale_pause(settings, sleeps, fake_claude):
+    fake_claude.set_scenario({"session_id": SID, "calls": [{}, {}], "default": PASS})
+    reg = SessionRegistry(settings.db_path)
+    orch, clk = make(settings, reg, sleeps)
+    st = await orch.submit(task(), start=False)
+    await orch.sessions.send(st.task_id, "plan", TaskStatus.PLANNING)
+    await orch.sessions.send(st.task_id, "impl", TaskStatus.IMPLEMENTING)
+    await reg.set_pause(st.task_id, START - timedelta(hours=1), TaskStatus.HEALING, "limit")  # reset already passed
+    await orch.resume_interrupted()
+    summary = await orch.wait(st.task_id, timeout=60)
+    final = await reg.get(st.task_id)
+    reg.close()
+    assert summary.status == TaskStatus.COMPLETED and clk.slept == 0
+    assert final.resume_at is None and final.paused_phase is None

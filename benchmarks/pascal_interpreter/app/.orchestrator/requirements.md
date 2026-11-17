@@ -1,41 +1,47 @@
-# SPI — Simple Pascal Interpreter: requirements
+# SPI — Simple Pascal Interpreter
 
 ## Product
-A Python 3 (stdlib only) tree-walking interpreter for a small Pascal subset (PROGRAM, VAR, nested PROCEDUREs with
-parameters, assignment, procedure calls, arithmetic). Pipeline: Lexer -> Parser (AST) -> Semantic analyzer
-(scoped symbol tables) -> Interpreter (call stack of activation records). CLI: `./spi <file.pas> [--scope] [--stack]`.
-Kind: compiler/interpreter toolchain; tests via pytest/unittest (stdlib unittest, runnable by pytest too).
+A Python 3 (stdlib only) CLI interpreter, `./spi <file.pas> [--scope] [--stack]`, for a small Pascal subset
+(PROGRAM, VAR, nested PROCEDUREs with params, assignments, procedure calls, arithmetic). Pipeline: lexer ->
+parser (AST) -> semantic analyzer (scoped symbol tables) -> tree-walking interpreter with a call stack of
+activation records. Classification: compiler/interpreter toolchain, CLI.
 
 ## Acceptance criteria
-R1. `./spi file.pas` runs the program; with no flags prints nothing on success (exit 0). Missing file/args -> usage message, exit nonzero (2).
-R2. Lexer: keywords PROGRAM VAR PROCEDURE BEGIN END INTEGER REAL DIV case-insensitive, token value upper-cased. Identifiers case-sensitive, letter then letters/digits. `{...}` comments skipped (may span lines). Whitespace insensitive. Integer (`INTEGER_CONST`, int value) and real (`REAL_CONST`, float value, e.g. `3.14`) literals. Symbols + - * / ( ) ; . : , := (types PLUS MINUS MUL FLOAT_DIV LPAREN RPAREN SEMI DOT COLON COMMA ASSIGN), EOF.
-R3. Lexer error on unknown char: `LexerError: Lexer error on '<char>' line: L column: C` (stdout, exit 1), 1-based position of the char.
-R4. Token repr: `Token(TokenType.<TYPE>, <repr(value)>, position=L:C)`; position = start of token.
-R5. Parser grammar: program : PROGRAM ID SEMI block DOT; block : declarations compound; declarations : (VAR (var_decl SEMI)+)? (PROCEDURE ID (LPAREN formal_parameter_list RPAREN)? SEMI block SEMI)*; var_decl: ID (COMMA ID)* COLON type; formal params groups separated by SEMI; compound: BEGIN statement_list END; statements separated by `;`, empty allowed; assignment; call `ID(args)` / `ID()`; expr with + - (left-assoc), * / DIV, unary +/-, parens, literals, variables.
-R6. Parser error: `ParserError: Unexpected token -> Token(TokenType.X, value, position=L:C)` of the offending token (including EOF, and tokens after the final DOT? — trailing content after DOT is ignored only if EOF expected: we require EOF after DOT, otherwise error on that token). Exit 1.
-R7. Semantic: builtin INTEGER, REAL in global (builtins) scope; PROGRAM scope is level 1 (global scope holding program vars), one scope per procedure (parameters + locals). Duplicate declaration in same scope (VAR or parameter clash) -> `SemanticError: Duplicate id found -> Token(TokenType.ID, 'name', position=L:C)` of the duplicate's identifier token. Undeclared variable use (read or assign target) -> `SemanticError: Identifier not found -> Token(TokenType.ID, 'name', position=L:C)`. Lookup walks enclosing scopes (analysis only). Calls to undeclared procedures also -> Identifier not found. Reported before any execution output.
-R8. Procedure calls: analyzer binds actual args to formal params (resolves procedure symbol; arity mismatch -> SemanticError-style message `SemanticError: Wrong number of arguments -> Token(TokenType.ID, 'name', position=L:C)`).
-R9. Interpreter: INTEGER vars assigned int; `/` yields float; DIV is integer floor division (`//`); unary ops; REAL vars hold floats (an int assigned to REAL variable is stored as given/converted? — assumption: stored as computed Python value, no coercion, except none). Procedure call evaluates args in caller, creates new activation record at level caller+1 with params bound in order, runs body, pops. Procedures access only own AR.
-R10. `--stack`: on entering/leaving program and each procedure prints `ENTER: <TYPE> <name>` / `LEAVE: <TYPE> <name>` (TYPE = PROGRAM or PROCEDURE), then `CALL STACK`, then each AR top-down as `<level>: <TYPE> <name>` and one line per member in first-assignment order: `   ` + name.ljust(20) + `: ` + str(value); then a blank line after each record (the whole stack ends with a blank line). Stack at LEAVE printed before pop. Format example:
-```
-ENTER: PROGRAM Main
-CALL STACK
-1: PROGRAM Main
-
-```
-Parameters are members in formal order, first assigned at call time. Printed output goes to stdout.
-R11. `--scope`: prints scope entry/exit and symbol table contents to stdout (free format) during semantic analysis. Flags combinable, any order, relative to file arg.
-R12. Errors printed to stdout, exit status 1; success exit 0.
-R13. Deliverables: `spi` executable script, package `spi/` modules (lexer, parser, ast, symbols/semantic, interpreter, cli), tests/ (lexer, parser, semantic, interpreter, CLI), README.md, requirements.txt (empty/stdlib note).
+- R1 `./spi file.pas` runs the program; with no flags prints nothing on success (exit 0).
+- R2 Lexer: case-insensitive keywords (PROGRAM VAR PROCEDURE BEGIN END DIV INTEGER REAL), case-sensitive
+  identifiers (letter then letters/digits), `{}` comments (multi-line), whitespace-insensitive, INTEGER_CONST,
+  REAL_CONST (`3.14`), tokens PLUS MINUS MUL FLOAT_DIV LPAREN RPAREN SEMI DOT COLON COMMA ASSIGN EOF. Line:col 1-based.
+- R3 Lexer error: `LexerError: Lexer error on '<char>' line: L column: C`, stdout, exit 1.
+- R4 Parser: grammar per spec; procedure calls always with parentheses (`Name()` allowed); empty statements allowed;
+  formal params grouped `(a, b : INTEGER; c : REAL)`; nested procedures.
+- R5 Parser error: `ParserError: Unexpected token -> Token(TokenType.X, repr, position=L:C)`; keywords uppercased in
+  value; numbers as numbers; EOF value `None`. Exit 1.
+- R6 Expressions: standard precedence, left-assoc, unary +/-, `/` real division, DIV integer truncating (`//`).
+- R7 Semantic: scoped symbol tables, builtin INTEGER/REAL in global scope, one scope per procedure (params are in it).
+  Duplicate var/param in same scope -> `SemanticError: Duplicate id found -> Token(TokenType.ID, 'x', position=L:C)`
+  (position of the second declaration). Undeclared variable use (assignment target or expression) ->
+  `SemanticError: Identifier not found -> Token(TokenType.ID, 'x', position=L:C)`. Calls to undeclared procedures
+  and arity mismatch also errors (not-found uses same format; arity mismatch: SemanticError message with token).
+  Calls bind actual args to formals (analysis checks arg expressions' variables).
+- R8 Interpreter: variables initially unset; assignment stores values; integer vs real types: INTEGER
+  var assigned from `/` stays float (no coercion beyond: declared REAL var assigned int stays int? — see assumptions).
+- R9 `--stack`: byte-exact trace format at ENTER/LEAVE of program and each procedure call, levels from top down,
+  variables in first-assignment order (params assigned at call in order), `   ` + name.ljust(20) + `: ` + str(value),
+  followed by exactly two empty lines after the last record line. LEAVE prints before pop.
+- R10 `--scope`: prints scope enter/leave and symbol table contents (free format) on stdout.
+- R11 Errors exit status 1 with message on stdout; missing file/usage -> nonzero exit.
+- R12 Tests: lexer, parser, semantic, interpreter, CLI; README.
 
 ## Assumptions
-- Program name keeps source case (`Main`); procedure names too.
-- Value strings use Python `str`; no int->float coercion for REAL variables (assigned value stored as computed). Division by zero is a runtime error: print `RuntimeError: Division by zero`, exit 1.
-- Reading an unassigned variable at run time: error `RuntimeError: Variable '<name>' referenced before assignment`, exit 1.
-- Duplicate position: the second occurrence identifier token. Parameters and var in same procedure clash.
-- Call as statement only (no function calls in expressions). Call syntax requires parentheses.
-- Non-terminating `.` followed by other tokens -> ParserError on first token after DOT (expected EOF).
-- Lexer errors surface at the time the lexer reaches the char (parser pull-based), so a parser error earlier in the file wins; to be deterministic we lex lazily.
+- Values keep Python types: `/` gives float, DIV gives int, no coercion on assignment (stack prints str(value)).
+  Reading an unassigned variable yields no value; treated as runtime error `RuntimeError` message, exit 1.
+- Procedure bodies see only own scope at runtime; semantic analyzer resolves names through enclosing scopes
+  (lookup chain) as in standard Pascal, but runtime reads only own record.
+- Arity mismatch: `SemanticError: Wrong number of arguments -> Token(TokenType.ID, 'P', position=L:C)`.
+- `--scope` and `--stack` outputs: scope output first (during analysis), then stack trace during execution.
+- Parser error token for unexpected EOF is `Token(TokenType.EOF, None, position=L:C)`.
+- Name display in stack for procedure/program uses the declared (case-preserved) name.
 
 ## Test strategy
-Unit tests per stage (R2-R4 lexer, R5-R6 parser, R7-R8 semantic, R9 interpreter), CLI subprocess tests (R1, R3, R6, R7, R10-R12) including exact `--stack` output comparison, README check manual.
+Unit tests (unittest) for lexer (R2,R3), parser (R4,R5), semantic (R7), interpreter (R6,R8), CLI via subprocess
+(R1,R9,R10,R11) including byte-exact stack output comparison.

@@ -345,6 +345,11 @@ class TaskOrchestrator:
                 state = out.state
                 phases.append(TaskStatus.PLANNING)
             else:
+                if state.resume_at is not None or state.status == TaskStatus.PAUSED_USAGE_LIMIT:
+                    # A pause persisted by a previous process: honour the gate, then clear the stale record.
+                    if self.gate.is_blocked:
+                        await self._wait_for_gate(task_id, state.paused_phase or state.status, "resuming after restart")
+                    await self.registry.clear_pause(task_id, state.paused_phase or TaskStatus.VERIFYING)
                 await self.bus.publish(task_id, "resumed", f"resuming session {state.session_id}", state.status,
                                        session_id=state.session_id, turn_count=state.turn_count)
 

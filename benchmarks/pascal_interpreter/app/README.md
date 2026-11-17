@@ -1,37 +1,33 @@
 # SPI — Simple Pascal Interpreter
 
-A tree-walking interpreter for a small Pascal subset, written in Python 3 (stdlib only).
+A tree-walking interpreter for a small Pascal subset, in Python 3 (standard library only; no install step).
+
+    ./spi program.pas [--scope] [--stack]
 
 ## Language
-`PROGRAM name; [VAR decls] {PROCEDURE name[(params)]; block;} BEGIN ... END.`
-Statements: compound, assignment, procedure calls (`P(a, b)` / `P()`), empty statements.
-Expressions: `+ - * /` (real division), `DIV` (floor division), unary `+ -`, parentheses, integer and real literals.
-Keywords are case-insensitive, identifiers case-sensitive, `{ comments }` are skipped.
-A procedure only sees its own parameters and locals at run time.
+`PROGRAM Name; [VAR decls] {PROCEDURE P [(a, b : INTEGER; c : REAL)]; block;} BEGIN ... END.`
+Statements: compound, assignment (`:=`), procedure call with mandatory parentheses (`P(1, x)`, `P()`), empty.
+Expressions: `+ - * / DIV`, unary `+ -`, parentheses, integer and real literals. Keywords are case-insensitive,
+identifiers case-sensitive, `{ comments }` supported. Procedures are declared before use and, at run time,
+see only their own parameters/locals.
 
-## Usage
-```
-./spi program.pas [--scope] [--stack]
-```
-* `--stack` prints `ENTER:`/`LEAVE:` lines plus the call stack (top first, variables in first-assignment order).
+## Flags
+* `--stack` prints `ENTER:`/`LEAVE:` lines with the call stack (top first; variables in first-assignment
+  order, `   name` padded to 20 chars, `: value`; two blank lines after each dump; LEAVE dumps before popping).
 * `--scope` prints scope entry/exit and symbol table contents during semantic analysis.
-* Errors (`LexerError`, `ParserError`, `SemanticError`, `RuntimeError`) are printed on stdout, exit status 1.
-  Usage / unreadable file: message on stderr, exit status 2.
 
-Example: `./spi examples/nested.pas --stack`
+## Errors
+Printed on stdout, exit status 1: `LexerError`, `ParserError`, `SemanticError` (duplicate id, identifier not
+found, wrong number of arguments) in the spec formats. A `RuntimeError` is raised for reading an unassigned
+variable or dividing by zero. Usage errors/unreadable files exit non-zero (2 / 1) with a message on stderr.
 
-## Install / test
-No dependencies (see `requirements.txt`). Run tests with `python3 -m unittest discover -s tests -t .`
-(pytest also works).
+## Design (`spi.py`)
+Lexer → recursive-descent Parser (AST) → SemanticAnalyzer (`ScopedSymbolTable` chain; resolves procedure
+calls to `ProcedureSymbol`s) → Interpreter (`CallStack` of `ActivationRecord`s). Values keep Python types
+(`/` gives float, `DIV` gives int); there is no type coercion on assignment.
 
-## Design (package `spi_interp`)
-`tokens` / `lexer` (lazy, position-tracking) → `parser` (recursive descent, AST in `ast`) →
-`semantic` (scoped symbol tables from `symbols`; duplicate / undeclared / arity checks; binds calls to
-procedure symbols) → `interpreter` (activation records + call stack) ; `cli` wires it together.
-Lexing is on demand, so the first error in source order wins between lexer and parser.
-The package is not named `spi` because that clashes with the `spi` executable.
+## Tests
+    python3 -m unittest discover -s tests -v
 
-## Assumptions
-Division by zero and reading an unassigned variable are runtime errors (`RuntimeError: ...`).
-Procedure calls with the wrong number of arguments give `SemanticError: Wrong number of arguments -> Token(...)`.
-No int→float coercion on assignment to REAL variables. Unbounded recursion reports a runtime error.
+Tests (`tests/test_spi.py`) cover lexer, parser, semantic analyzer, interpreter and CLI; names carry the
+requirement numbers from `.orchestrator/requirements.md`. `examples/nested.pas` is a sample program.
