@@ -19,8 +19,13 @@ tool for the options below, so existing scripts and screenshots stay valid.
   as `_`; other ASCII (control) `•` green (`32`); non-ASCII `×` yellow (`33`). The position column is
   bright black. Colour runs are emitted only when the category changes and reset with `39` before each
   border character, e.g. `│\x1b[90m00000000\x1b[39m│ \x1b[36m48 65 6c 6c 6f 2c \x1b[32m20 \x1b[36m57\x1b[39m ┊ ...`.
+  On a short final line the colour run stays open through the padding spaces and is reset just before
+  the border, e.g. `\x1b[36m65 72 65 \x1b[32m0a            \x1b[39m │` (not `...0a\x1b[39m            │`).
 * Squeezing: when a whole line repeats the previous line, print one line with `*` in the position column
   (padded, panels blank) and skip further identical lines; the final line shows the total length.
+  When the position column is hidden (`-P`, `-p`), the `*` is printed as the first character of the
+  first hex panel instead, e.g. with `--color=never -C -P --border ascii`:
+  `|*                        |                         |        |        |`.
   `-v/--no-squeezing` disables it.
 
 ## Options
