@@ -1,37 +1,37 @@
-"""Timestamped signing."""
-from __future__ import annotations
-
+"""Signatures with timestamps."""
 import time
-import typing as t
-from datetime import datetime, timezone
+from datetime import datetime
+from datetime import timezone
 
-from .encoding import base64_decode, base64_encode, bytes_to_int, int_to_bytes, want_bytes
-from .exc import BadSignature, BadTimeSignature, SignatureExpired
+from .encoding import base64_decode
+from .encoding import base64_encode
+from .encoding import bytes_to_int
+from .encoding import int_to_bytes
+from .encoding import want_bytes
+from .exc import BadSignature
+from .exc import BadTimeSignature
+from .exc import SignatureExpired
 from .serializer import Serializer
 from .signer import Signer
 
 
 class TimestampSigner(Signer):
-    """``value . timestamp . signature``."""
+    """Adds a base64 big-endian timestamp between value and signature."""
 
-    def get_timestamp(self) -> int:
+    def get_timestamp(self):
         return int(time.time())
 
-    def timestamp_to_datetime(self, ts: int) -> datetime:
+    def timestamp_to_datetime(self, ts):
+        """Timezone-aware UTC datetime for a timestamp."""
         return datetime.fromtimestamp(ts, tz=timezone.utc)
 
-    def sign(self, value: str | bytes) -> bytes:
+    def sign(self, value):
         value = want_bytes(value)
         timestamp = base64_encode(int_to_bytes(self.get_timestamp()))
         value = value + self.sep + timestamp
         return value + self.sep + self.get_signature(value)
 
-    def unsign(  # type: ignore[override]
-        self,
-        signed_value: str | bytes,
-        max_age: int | None = None,
-        return_timestamp: bool = False,
-    ) -> t.Any:
+    def unsign(self, signed_value, max_age=None, return_timestamp=False):
         try:
             result = super().unsign(signed_value)
             sig_error = None
@@ -45,8 +45,8 @@ class TimestampSigner(Signer):
             raise BadTimeSignature("timestamp missing", payload=result)
 
         value, ts_bytes = result.rsplit(self.sep, 1)
-        ts_int: int | None = None
-        ts_dt: datetime | None = None
+        ts_int = None
+        ts_dt = None
         try:
             ts_int = bytes_to_int(base64_decode(ts_bytes))
         except Exception:
@@ -63,7 +63,7 @@ class TimestampSigner(Signer):
                 str(sig_error), payload=value, date_signed=ts_dt
             )
 
-        if ts_int is None or ts_dt is None:
+        if ts_int is None:
             raise BadTimeSignature("Malformed timestamp", payload=value)
 
         if max_age is not None:
@@ -85,7 +85,7 @@ class TimestampSigner(Signer):
             return value, ts_dt
         return value
 
-    def validate(self, signed_value: str | bytes, max_age: int | None = None) -> bool:  # type: ignore[override]
+    def validate(self, signed_value, max_age=None):
         try:
             self.unsign(signed_value, max_age=max_age)
             return True
@@ -94,20 +94,11 @@ class TimestampSigner(Signer):
 
 
 class TimedSerializer(Serializer):
-    """Serializer using :class:`TimestampSigner`."""
+    """A serializer that uses :class:`TimestampSigner`."""
 
     default_signer = TimestampSigner
 
-    def iter_unsigners(self, salt: str | bytes | None = None) -> t.Iterator[t.Any]:
-        return super().iter_unsigners(salt)
-
-    def loads(  # type: ignore[override]
-        self,
-        s: str | bytes,
-        max_age: int | None = None,
-        return_timestamp: bool = False,
-        salt: str | bytes | None = None,
-    ) -> t.Any:
+    def loads(self, s, max_age=None, return_timestamp=False, salt=None):
         s = want_bytes(s)
         last_exception = None
         for signer in self.iter_unsigners(salt):
@@ -120,16 +111,10 @@ class TimedSerializer(Serializer):
                     return payload, timestamp
                 return payload
             except SignatureExpired:
-                # Expiry means the signature was valid; don't try others.
                 raise
             except BadSignature as err:
                 last_exception = err
-        raise t.cast(BadSignature, last_exception)
+        raise last_exception
 
-    def loads_unsafe(  # type: ignore[override]
-        self,
-        s: str | bytes,
-        max_age: int | None = None,
-        salt: str | bytes | None = None,
-    ) -> tuple[bool, t.Any]:
-        return self._loads_unsafe_impl(s, salt, load_kwargs={"max_age": max_age})
+    def loads_unsafe(self, s, max_age=None, salt=None):
+        return self._loads_unsafe_impl(s, salt, max_age=max_age)

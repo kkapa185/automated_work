@@ -1,94 +1,45 @@
-import {generalTable, localeTables} from './lib/tables.js';
+import transliterate from './lib/transliterate.js';
 
 const defaultReplacements = [
 	['&', ' and '],
 	['🦄', ' unicorn '],
-	['♥', ' love '],
+	['♥', ' love ']
 ];
 
-const APOSTROPHES = new Set(['\'', '’', 'ʼ', '‘', '′']);
-const MARKS = /\p{M}/u;
+const escapeRegex = string => string.replaceAll(/[\\^$.*+?()[\]{}|/-]/g, String.raw`\$&`);
 
-function normalizeReplacements(input) {
-	if (input === undefined) {
-		return [];
-	}
-
-	if (input === null || typeof input !== 'object' || typeof input[Symbol.iterator] !== 'function') {
-		throw new TypeError('Expected `customReplacements` to be an array of [from, to] pairs or a Map');
-	}
-
-	const pairs = [];
-	for (const pair of input) {
-		if (!Array.isArray(pair) || pair.length < 2 || typeof pair[0] !== 'string' || typeof pair[1] !== 'string') {
-			throw new TypeError('Each `customReplacements` entry must be a [from, to] pair of strings');
+function buildReplacements(custom) {
+	const map = new Map(defaultReplacements);
+	if (custom !== undefined) {
+		if (custom === null || typeof custom[Symbol.iterator] !== 'function') {
+			throw new TypeError('Expected `customReplacements` to be an array of [from, to] pairs');
 		}
 
-		pairs.push([pair[0], pair[1]]);
+		for (const pair of custom) {
+			if (!pair || typeof pair[0] !== 'string' || typeof pair[1] !== 'string') {
+				throw new TypeError('Expected each custom replacement to be a [string, string] pair');
+			}
+
+			map.set(pair[0].normalize('NFC'), pair[1]);
+		}
 	}
 
-	return pairs;
-}
-
-function mergeReplacements(userPairs) {
-	const merged = new Map(defaultReplacements);
-	for (const [from, to] of userPairs) {
-		merged.set(from, to);
+	map.delete('');
+	if (map.size === 0) {
+		return string => string;
 	}
 
-	return [...merged].filter(([from]) => from !== '');
+	// Single pass, longest key first: replacement output is never re-replaced.
+	const keys = [...map.keys()].sort((a, b) => b.length - a.length);
+	const regex = new RegExp(keys.map(key => escapeRegex(key)).join('|'), 'gu');
+	return string => string.replace(regex, match => map.get(match));
 }
 
 function decamelizeString(string) {
 	return string
-		.replace(/([\p{Ll}\p{N}])(\p{Lu})/gu, '$1 $2')
-		.replace(/(\p{Lu}+)(\p{Lu}\p{Ll})/gu, '$1 $2')
-		.replace(/(\p{Lu}{2,})(\p{N})/gu, '$1 $2');
-}
-
-function languageOf(locale) {
-	if (locale === undefined || locale === null || locale === '') {
-		return undefined;
-	}
-
-	if (typeof locale !== 'string') {
-		throw new TypeError('Expected `locale` to be a string');
-	}
-
-	return locale.split(/[-_]/)[0].toLowerCase();
-}
-
-function transliterateChar(char, localeTable) {
-	if (localeTable && Object.hasOwn(localeTable, char)) {
-		return localeTable[char];
-	}
-
-	if (Object.hasOwn(generalTable, char)) {
-		return generalTable[char];
-	}
-
-	const code = char.codePointAt(0);
-	if (code < 128) {
-		return char;
-	}
-
-	// Fallback: compatibility decomposition, dropping combining marks.
-	let output = '';
-	for (const part of char.normalize('NFKD')) {
-		if (part === char) {
-			output += MARKS.test(part) ? '' : ' ';
-		} else if (MARKS.test(part)) {
-			// Dropped.
-		} else {
-			output += transliterateChar(part, localeTable);
-		}
-	}
-
-	return output;
-}
-
-function escapeClass(characters) {
-	return characters.replace(/[\\\]^\-[]/g, String.raw`\$&`);
+		.replaceAll(/([\p{Ll}\p{N}])(\p{Lu})/gu, '$1 $2') // FooBar -> Foo Bar, foo360BAR -> foo360 BAR
+		.replaceAll(/(\p{Lu}+)(\p{Lu}\p{Ll})/gu, '$1 $2') // APISection -> API Section
+		.replaceAll(/(\p{Lu}{2,})(\p{N})/gu, '$1 $2'); // FOO360 -> FOO 360
 }
 
 export default function slugify(string, options) {
@@ -96,7 +47,7 @@ export default function slugify(string, options) {
 		throw new TypeError(`Expected a string, got \`${typeof string}\``);
 	}
 
-	if (options !== undefined && (options === null || typeof options !== 'object' || Array.isArray(options))) {
+	if (options !== undefined && (options === null || typeof options !== 'object')) {
 		throw new TypeError('Expected `options` to be an object');
 	}
 
@@ -109,105 +60,104 @@ export default function slugify(string, options) {
 		preserveTrailingDash = false,
 		preserveCharacters = [],
 		locale,
-		transliterate = true,
+		transliterate: shouldTransliterate = true
 	} = options ?? {};
 
 	if (typeof separator !== 'string') {
 		throw new TypeError('Expected `separator` to be a string');
 	}
 
-	if (!Array.isArray(preserveCharacters) || preserveCharacters.some(c => typeof c !== 'string')) {
+	if (!Array.isArray(preserveCharacters)) {
 		throw new TypeError('Expected `preserveCharacters` to be an array of strings');
 	}
 
-	if (separator !== '' && preserveCharacters.includes(separator)) {
-		throw new Error(`The separator \`${separator}\` cannot be included in \`preserveCharacters\``);
+	const preserved = new Set();
+	for (const character of preserveCharacters) {
+		if (typeof character !== 'string') {
+			throw new TypeError('Expected `preserveCharacters` to be an array of strings');
+		}
+
+		const normalized = character.normalize('NFC');
+		if (separator !== '' && normalized !== '' && separator.includes(normalized)) {
+			throw new Error('The `separator` option cannot be included in `preserveCharacters`');
+		}
+
+		if (normalized !== '') {
+			preserved.add(normalized);
+		}
 	}
 
-	const replacements = mergeReplacements(normalizeReplacements(customReplacements));
-	const language = languageOf(locale);
-	const localeTable = language ? localeTables[language] : undefined;
-	const preserved = new Set(preserveCharacters.flatMap(c => [...c]));
-
-	const endsWithDash = string.endsWith('-');
-	const startsWithUnderscore = string.startsWith('_');
-
-	let text = string;
-	for (const [from, to] of replacements) {
-		text = text.split(from).join(to);
-	}
-
-	text = text.normalize('NFC');
+	const original = string.normalize('NFC');
+	let text = buildReplacements(customReplacements)(original);
 
 	if (decamelize) {
 		text = decamelizeString(text);
 	}
 
-	let converted = '';
-	for (const char of text) {
-		if (preserved.has(char)) {
-			converted += char;
-		} else if (APOSTROPHES.has(char)) {
-			// Apostrophes are dropped so that "Conway's" stays one word.
-		} else if (transliterate) {
-			converted += transliterateChar(char, localeTable);
-		} else {
-			converted += /[\p{L}\p{N}\p{M}]/u.test(char) ? char : ' ';
-		}
+	// Apostrophes inside words are removed rather than treated as separators.
+	if (preserved.has('\'') || preserved.has('’')) {
+		// Preserved apostrophes survive, except word-final 's / 't.
+		text = text.replaceAll(/(?<=[\p{L}\p{N}])['’](?=[st](?![\p{L}\p{N}]))/gu, '');
+	} else {
+		text = text.replaceAll(/(?<=[\p{L}\p{N}])['’](?=[\p{L}\p{N}])/gu, '');
+	}
+
+	if (shouldTransliterate) {
+		text = transliterate(text, {locale, keep: preserved});
 	}
 
 	if (lowercase) {
-		converted = converted.toLowerCase();
+		text = text.toLowerCase();
 	}
 
-	const extra = escapeClass([...preserved].join(''));
-	const wordPattern = transliterate
-		? new RegExp(`[a-zA-Z0-9${extra}]+`, 'gu')
-		: new RegExp(`[\\p{L}\\p{N}\\p{M}${extra}]+`, 'gu');
+	const extra = [...preserved].map(character => escapeRegex(character)).join('');
+	const allowed = shouldTransliterate ? 'a-zA-Z0-9' : String.raw`\p{L}\p{N}\p{M}`;
+	const splitter = new RegExp(`[^${allowed}${extra}]+`, 'u');
 
-	let slug = (converted.match(wordPattern) ?? []).join(separator);
+	let slug = text.split(splitter).filter(Boolean).join(separator);
 
-	if (preserveLeadingUnderscore && startsWithUnderscore) {
-		slug = `_${slug}`;
-	}
+	if (slug !== '') {
+		if (preserveLeadingUnderscore && original.startsWith('_')) {
+			slug = `_${slug}`;
+		}
 
-	if (preserveTrailingDash && endsWithDash) {
-		slug = `${slug}-`;
+		if (preserveTrailingDash && original.endsWith('-') && !slug.endsWith('-')) {
+			slug += '-';
+		}
 	}
 
 	return slug;
 }
 
-export function slugifyWithCounter() {
-	const issued = new Set();
-	const counts = new Map();
+export {slugify};
 
-	const counter = (string, options) => {
-		const slug = slugify(string, options);
-		if (!issued.has(slug)) {
-			issued.add(slug);
-			counts.set(slug, 1);
-			return slug;
+export function slugifyWithCounter() {
+	let used = new Set();
+	let counts = new Map();
+
+	const counted = (string, options) => {
+		const base = slugify(string, options);
+		const separator = options?.separator ?? '-';
+		let slug = base;
+
+		if (used.has(slug)) {
+			let count = counts.get(base) ?? 1;
+			do {
+				count++;
+				slug = `${base}${separator}${count}`;
+			} while (used.has(slug));
+
+			counts.set(base, count);
 		}
 
-		const separator = options?.separator ?? '-';
-		let n = counts.get(slug) ?? 1;
-		let candidate;
-		do {
-			n++;
-			candidate = `${slug}${separator}${n}`;
-		} while (issued.has(candidate));
-
-		counts.set(slug, n);
-		issued.add(candidate);
-		counts.set(candidate, 1);
-		return candidate;
+		used.add(slug);
+		return slug;
 	};
 
-	counter.reset = () => {
-		issued.clear();
-		counts.clear();
+	counted.reset = () => {
+		used = new Set();
+		counts = new Map();
 	};
 
-	return counter;
+	return counted;
 }

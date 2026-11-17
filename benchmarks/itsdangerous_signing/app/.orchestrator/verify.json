@@ -1,6 +1,6 @@
 {
-  "setup": ["python3 -m pip install -e . pytest"],
+  "setup": ["python3 -m pip install -q pytest"],
   "test": ["python3 -m pytest -q"],
-  "build": ["python3 -m compileall -q src"],
-  "smoke": [{"command": "python3 -c \"import itsdangerous as i; s=i.URLSafeTimedSerializer('k'); assert s.loads(s.dumps({'a':1}))=={'a':1}\""}]
+  "build": ["python3 -m compileall -q itsdangerous"],
+  "smoke": [{"command": "python3 examples/demo.py"}]
 }
