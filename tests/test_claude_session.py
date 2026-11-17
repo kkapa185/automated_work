@@ -35,6 +35,8 @@ def test_build_argv_start_and_resume(settings, registry):
     assert start[start.index("--output-format") + 1] == "json"
     assert start[start.index("--model") + 1] == "opus"
     assert start[-1] == "--verbose"
+    assert "--strict-mcp-config" in start
+    assert "--strict-mcp-config" not in ClaudeSessionManager(settings.model_copy(update={"cli_isolate_mcp": False}), registry).build_argv("p", None, t)
     assert "--resume" not in start
     resume = sm.build_argv("again", SID, t)
     assert resume[:5] == [settings.claude_binary, "--resume", SID, "-p", "again"]
@@ -192,3 +194,66 @@ async def test_extra_env_is_passed(settings, registry, fake_claude, sleeps):
     sm = ClaudeSessionManager(settings, registry, sleep=sleeps)
     env = sm._env(st.task_input)
     assert env["MY_FLAG"] == "42" and "PATH" in env
+
+
+# ------------------------------------------------------------------ pre-assigned session ids
+
+async def test_preassigned_session_id_used_and_bound(settings, registry, fake_claude, sleeps):
+    s = settings.model_copy(update={"preassign_session_id": True})
+    st = await new_task(registry, s)
+    sm = ClaudeSessionManager(s, registry, sleep=sleeps)
+    out = await sm.send(st.task_id, "plan", TaskStatus.PLANNING)
+    planned = (await registry.get(st.task_id)).planned_session_id
+    assert planned and out.result.session_id == planned == (await registry.get(st.task_id)).session_id
+    a0 = fake_claude.argvs()[0]
+    assert a0[a0.index("--session-id") + 1] == planned and "--resume" not in a0
+    await sm.send(st.task_id, "impl", TaskStatus.IMPLEMENTING)
+    a1 = fake_claude.argvs()[1]
+    assert a1[0:2] == ["--resume", planned] and "--session-id" not in a1
+
+
+async def test_first_turn_timeout_is_retried_on_the_same_session(settings, registry, fake_claude, sleeps):
+    """Session created, then the CLI hangs: the retry must adopt the planned id, not start a second session."""
+    s = settings.model_copy(update={"preassign_session_id": True, "cli_timeout_s": 1.0, "kill_grace_s": 0.3})
+    fake_claude.set_scenario({"calls": [{"sleep": 30}], "default": {}})
+    st = await new_task(registry, s)
+    sm = ClaudeSessionManager(s, registry, sleep=sleeps)
+    out = await sm.send(st.task_id, "plan", TaskStatus.PLANNING)
+    planned = (await registry.get(st.task_id)).planned_session_id
+    argvs = fake_claude.argvs()
+    # attempt 1 timed out; attempt 2 got "already in use"; attempt 3 resumed the planned session
+    assert [("--resume" in a, a[a.index("--session-id") + 1] if "--session-id" in a else None) for a in argvs] == \
+        [(False, planned), (False, planned), (True, None)]
+    assert argvs[2][0:2] == ["--resume", planned]
+    assert out.result.session_id == planned and out.turn.resumed
+
+
+async def test_crash_before_session_creation_restarts_with_same_planned_id(settings, registry, fake_claude, sleeps):
+    s = settings.model_copy(update={"preassign_session_id": True})
+    fake_claude.set_scenario({"calls": [{"crash_before_session": True}], "default": {}})
+    st = await new_task(registry, s)
+    sm = ClaudeSessionManager(s, registry, sleep=sleeps)
+    out = await sm.send(st.task_id, "plan", TaskStatus.PLANNING)
+    planned = (await registry.get(st.task_id)).planned_session_id
+    argvs = fake_claude.argvs()
+    assert len(argvs) == 2 and all(a[a.index("--session-id") + 1] == planned for a in argvs)
+    assert out.result.session_id == planned
+
+
+async def test_planned_session_survives_restart(settings, registry, fake_claude, sleeps, tmp_path):
+    s = settings.model_copy(update={"preassign_session_id": True})
+    st = await new_task(registry, s)
+    planned = await registry.plan_session(st.task_id, "11111111-2222-4333-8444-555555555555")
+    assert await registry.plan_session(st.task_id, "other") == planned  # idempotent
+    sm = ClaudeSessionManager(s, registry, sleep=sleeps)
+    out = await sm.send(st.task_id, "plan", TaskStatus.PLANNING)
+    assert out.result.session_id == planned
+
+
+async def test_cli_ignoring_planned_id_violates_invariant(settings, registry, fake_claude, sleeps):
+    s = settings.model_copy(update={"preassign_session_id": True})
+    fake_claude.set_scenario({"calls": [{"session_id": "rogue"}]})
+    st = await new_task(registry, s)
+    sm = ClaudeSessionManager(s, registry, sleep=sleeps)
+    with pytest.raises(SessionInvariantError):
+        await sm.send(st.task_id, "plan", TaskStatus.PLANNING)

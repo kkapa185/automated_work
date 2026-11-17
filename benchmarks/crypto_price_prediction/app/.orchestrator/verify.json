@@ -1,0 +1,11 @@
+{
+  "setup": ["python -m pip install -q -r requirements.txt"],
+  "test": ["python -m pytest -q"],
+  "build": ["python -m compileall -q btcpredict_lib"],
+  "smoke": [
+    {"command": "./btcpredict train --model linear --data data/btc_1h.csv --out runs/smoke_linear"},
+    {"command": "./btcpredict train --model cnn --data data/btc_1h.csv --epochs 2 --out runs/smoke_cnn"},
+    {"command": "./btcpredict predict --run runs/smoke_cnn --data data/btc_1h.csv --out runs/smoke_forecast.csv"},
+    {"command": "./btcpredict compare --runs runs/smoke_linear runs/smoke_cnn --out runs/smoke_report.md"}
+  ]
+}

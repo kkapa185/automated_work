@@ -1,0 +1,10 @@
+{
+  "setup": ["python3 -m pip install -r requirements-dev.txt"],
+  "test": ["python3 -m pytest -q"],
+  "build": ["python3 -m compileall -q catalog_explorer"],
+  "smoke": [
+    {"command": "./catalog build hub -o out/projects.json"},
+    {"command": "./catalog serve hub --port 8787", "url": "http://127.0.0.1:8787/api/facets", "timeout_s": 60},
+    {"command": "./catalog serve hub --port 8788", "url": "http://127.0.0.1:8788/", "timeout_s": 60}
+  ]
+}

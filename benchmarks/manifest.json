@@ -1,11 +1,87 @@
 {
   "benchmarks": [
-    {"name": "crypto_price_prediction", "reference_repo": "https://github.com/khuangaf/CryptocurrencyPrediction",
-     "reference_path": "/home/user/reference/CryptocurrencyPrediction", "max_turns": 10, "compare_timeout_s": 14400},
-    {"name": "matlab_challenge_explorer", "reference_repo": "https://github.com/mathworks/MATLAB-Simulink-Challenge-Project-Hub",
-     "reference_path": "/home/user/reference/MATLAB-Simulink-Challenge-Project-Hub", "max_turns": 10},
-    {"name": "apollo11_agc_assembler", "reference_repo": "https://github.com/chrislgarry/Apollo-11",
-     "reference_path": "/home/user/reference/Apollo-11", "max_turns": 16, "cli_timeout_s": 5400,
-     "constraints": ["Do not download or consult Virtual AGC (virtualagc, yaYUL, ibiblio.org/apollo) sources, binaries or octal listings; derive the rope solely by assembling the provided sources."]}
+    {
+      "name": "crypto_price_prediction",
+      "reference_repo": "https://github.com/khuangaf/CryptocurrencyPrediction",
+      "reference_path": "/home/user/reference/CryptocurrencyPrediction",
+      "max_turns": 10,
+      "compare_timeout_s": 14400
+    },
+    {
+      "name": "matlab_challenge_explorer",
+      "reference_repo": "https://github.com/mathworks/MATLAB-Simulink-Challenge-Project-Hub",
+      "reference_path": "/home/user/reference/MATLAB-Simulink-Challenge-Project-Hub",
+      "max_turns": 10
+    },
+    {
+      "name": "apollo11_agc_assembler",
+      "reference_repo": "https://github.com/chrislgarry/Apollo-11",
+      "reference_path": "/home/user/reference/Apollo-11",
+      "max_turns": 16,
+      "cli_timeout_s": 5400,
+      "constraints": [
+        "Do not download or consult Virtual AGC (virtualagc, yaYUL, ibiblio.org/apollo) sources, binaries or octal listings; derive the rope solely by assembling the provided sources."
+      ]
+    },
+    {
+      "name": "micrograd_autograd",
+      "reference_repo": "https://github.com/karpathy/micrograd",
+      "reference_path": "/home/user/reference/micrograd",
+      "max_turns": 8
+    },
+    {
+      "name": "minbpe_tokenizer",
+      "reference_repo": "https://github.com/karpathy/minbpe",
+      "reference_path": "/home/user/reference/minbpe",
+      "max_turns": 8
+    },
+    {
+      "name": "pascal_interpreter",
+      "reference_repo": "https://github.com/rspivak/lsbasi",
+      "reference_path": "/home/user/reference/lsbasi",
+      "max_turns": 10
+    },
+    {
+      "name": "itsdangerous_signing",
+      "reference_repo": "https://github.com/pallets/itsdangerous",
+      "reference_path": "/home/user/reference/itsdangerous",
+      "max_turns": 8
+    },
+    {
+      "name": "slugify_js",
+      "reference_repo": "https://github.com/sindresorhus/slugify",
+      "reference_path": "/home/user/reference/slugify",
+      "max_turns": 10
+    },
+    {
+      "name": "jsmn_c",
+      "reference_repo": "https://github.com/zserge/jsmn",
+      "reference_path": "/home/user/reference/jsmn",
+      "max_turns": 8
+    },
+    {
+      "name": "hexyl_rust",
+      "reference_repo": "https://github.com/sharkdp/hexyl",
+      "reference_path": "/home/user/reference/hexyl",
+      "max_turns": 10
+    },
+    {
+      "name": "hey_go",
+      "reference_repo": "https://github.com/rakyll/hey",
+      "reference_path": "/home/user/reference/hey",
+      "max_turns": 8
+    },
+    {
+      "name": "realworld_api",
+      "reference_repo": "https://github.com/gothinkster/realworld",
+      "reference_path": "/home/user/reference/realworld",
+      "max_turns": 12
+    },
+    {
+      "name": "todomvc_frontend",
+      "reference_repo": "https://github.com/tastejs/todomvc",
+      "reference_path": "/home/user/reference/todomvc",
+      "max_turns": 10
+    }
   ]
 }

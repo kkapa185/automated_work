@@ -92,12 +92,16 @@ def settings_for(bench: dict[str, Any]) -> Settings:
     return Settings.from_env(**overrides)
 
 
-def copy_app(src: Path, dst: Path) -> None:
+def copy_app(src: Path, dst: Path, inputs: list[str] | None = None) -> None:
+    """Copy the generated application, minus build artefacts, large files and the benchmark's input data."""
     if dst.exists():
         shutil.rmtree(dst)
+    input_set = set(inputs or [])
 
     def ignore(d: str, names: list[str]) -> set[str]:
         skipped = {n for n in names if n in COPY_EXCLUDE or n.endswith((".pyc", ".h5", ".hdf5", ".keras", ".pt", ".ckpt"))}
+        if Path(d) == src:
+            skipped |= {n for n in names if n in input_set or n.startswith("_bench")}
         for n in names:
             p = Path(d) / n
             if p.is_file() and p.stat().st_size > MAX_COPY_FILE_BYTES:
@@ -159,6 +163,7 @@ async def run_one(bench: dict[str, Any], force: bool) -> dict[str, Any]:
             if prep.exists():
                 subprocess.run([sys.executable, str(prep), "--workspace", str(workspace),
                                 "--reference", bench.get("reference_path", "")], check=True)
+            entry["inputs"] = sorted(p.name for p in workspace.iterdir())  # provided data, not generated code
             constraints = [DEFAULT_CONSTRAINT.format(repo=bench["reference_repo"])] if bench.get("reference_repo") else []
             constraints += bench.get("constraints", [])
             task = TaskInput(
@@ -178,7 +183,7 @@ async def run_one(bench: dict[str, Any], force: bool) -> dict[str, Any]:
         log.info("%s: orchestrator finished %s in %d turns ($%.2f)", name, summary.status.value,
                  summary.turns_used, summary.total_cost_usd)
         compare = run_compare(bench, workspace, entry["attempt"])
-        copy_app(workspace, BENCH_DIR / name / "app")
+        copy_app(workspace, BENCH_DIR / name / "app", entry.get("inputs"))
         record = {
             "name": name, "attempt": entry["attempt"], "task_id": task_id, "session_id": summary.session_id,
             "status": summary.status.value, "turns": summary.turns_used, "cost_usd": round(summary.total_cost_usd, 4),

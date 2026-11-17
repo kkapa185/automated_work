@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     summary        TEXT,
     resume_at      TEXT,
     paused_phase   TEXT,
+    planned_session_id TEXT,
     created_at     TEXT NOT NULL,
     updated_at     TEXT NOT NULL
 );
@@ -76,7 +77,7 @@ class SessionRegistry:
             self._conn.execute("PRAGMA foreign_keys=ON")
             self._conn.executescript(SCHEMA)
             cols = {r["name"] for r in self._conn.execute("PRAGMA table_info(sessions)").fetchall()}
-            for col in ("resume_at", "paused_phase"):  # forward migration for databases created before v1.1
+            for col in ("resume_at", "paused_phase", "planned_session_id"):  # forward migration for databases created before v1.1
                 if col not in cols:
                     self._conn.execute(f"ALTER TABLE sessions ADD COLUMN {col} TEXT")
 
@@ -97,6 +98,7 @@ class SessionRegistry:
         return SessionState(
             task_id=row["task_id"],
             session_id=row["session_id"],
+            planned_session_id=row["planned_session_id"],
             workspace_path=row["workspace_path"],
             status=TaskStatus(row["status"]),
             turn_count=row["turn_count"],
@@ -186,6 +188,21 @@ class SessionRegistry:
             if cur.rowcount != 1:
                 raise SessionInvariantError(f"concurrent bind detected for task {task_id}")
         await self._run(op)
+
+    async def plan_session(self, task_id: str, session_id: str) -> str:
+        """Record the session id we will ask the CLI to create. Returns the (possibly pre-existing) planned id."""
+        def op() -> str:
+            row = self._get_row(task_id)
+            if row["session_id"] is not None:
+                raise SessionInvariantError(f"task {task_id} already has session {row['session_id']}")
+            if row["planned_session_id"]:
+                return row["planned_session_id"]
+            self._conn.execute(
+                "UPDATE sessions SET planned_session_id=?, updated_at=? WHERE task_id=? AND planned_session_id IS NULL",
+                (session_id, utcnow().isoformat(), task_id),
+            )
+            return session_id
+        return await self._run(op)
 
     async def update_status(self, task_id: str, status: TaskStatus, last_error: str | None = None) -> None:
         def op() -> None:

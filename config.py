@@ -53,6 +53,12 @@ class Settings(BaseModel):
     usage_gate_poll_s: float = 60.0
     # Environment variables removed before spawning the nested claude CLI (e.g. the parent session's identity).
     cli_env_unset: list[str] = Field(default_factory=list)
+    # Do not let the nested CLI load the account's MCP connectors (Slack, Jira, ...): tasks get context
+    # through the orchestrator's own connectors, and unreachable MCP hosts only slow every turn down.
+    cli_isolate_mcp: bool = True
+    # Choose the session id ourselves (`--session-id`) and persist it before the first call, so that a
+    # first turn that times out or crashes before printing JSON is retried on the SAME session.
+    preassign_session_id: bool = True
     max_argv_prompt_bytes: int = 100_000  # larger prompts are piped via stdin (Linux MAX_ARG_STRLEN is 128KiB)
 
     # --- context sizing ------------------------------------------------------

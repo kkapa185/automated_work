@@ -84,6 +84,7 @@ def settings(tmp_path: Path, fake_claude: FakeClaude) -> Settings:
         backoff_base_s=0.01,
         backoff_max_s=0.05,
         max_reviews=0,  # review turns are exercised explicitly in test_phases.py
+        preassign_session_id=False,  # exercised explicitly in test_claude_session.py
         usage_gate_poll_s=0.01,
     )
 

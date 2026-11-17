@@ -52,6 +52,24 @@ def main() -> int:
     calls = scenario.get("calls", [])
     spec = calls[index] if index < len(calls) else scenario.get("default", {})
 
+    # Emulate `--session-id`: the session is created as soon as the CLI starts; reusing an id fails.
+    sessions_file = log_path + ".sessions"
+    if "--session-id" in argv and "--resume" not in argv:
+        wanted = argv[argv.index("--session-id") + 1]
+        try:
+            existing = open(sessions_file).read().split()
+        except FileNotFoundError:
+            existing = []
+        if wanted in existing:
+            sys.stderr.write(f"Error: Session ID {wanted} is already in use.\n")
+            return 1
+        if not spec.get("crash_before_session"):
+            with open(sessions_file, "a") as fh:
+                fh.write(wanted + "\n")
+        else:
+            sys.stderr.write("fatal: crashed during startup ECONNRESET\n")
+            return 1
+
     if spec.get("spawn_child"):
         child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(600)"])
         with open(log_path + ".children", "a") as fh:
@@ -74,6 +92,8 @@ def main() -> int:
     else:
         if "--resume" in argv:
             sid = argv[argv.index("--resume") + 1]
+        elif "--session-id" in argv:
+            sid = argv[argv.index("--session-id") + 1]
         else:
             sid = scenario.get("session_id", "fake-session-0001")
         sid = spec.get("session_id", sid)

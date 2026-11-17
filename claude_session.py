@@ -8,6 +8,7 @@ import logging
 import os
 import re
 import time
+import uuid
 from dataclasses import dataclass
 from typing import Awaitable, Callable
 
@@ -30,6 +31,7 @@ TRANSIENT_RE = re.compile(
     r"temporarily unavailable|service unavailable|request timed out",
     re.IGNORECASE,
 )
+SESSION_IN_USE_RE = re.compile(r"session id \S+ is already in use", re.IGNORECASE)
 FATAL_RE = re.compile(r"invalid api key|not logged in|authentication|unauthorized|permission denied|\b401\b|\b403\b", re.IGNORECASE)
 
 Sleeper = Callable[[float], Awaitable[None]]
@@ -157,7 +159,8 @@ class ClaudeSessionManager:
             return list(task.allowed_tools)
         return list(self.settings.allowed_tools_standard)
 
-    def build_argv(self, prompt: str | None, session_id: str | None, task: TaskInput) -> list[str]:
+    def build_argv(self, prompt: str | None, session_id: str | None, task: TaskInput,
+                   new_session_id: str | None = None) -> list[str]:
         s = self.settings
         argv = [s.claude_binary]
         if session_id:
@@ -166,6 +169,8 @@ class ClaudeSessionManager:
         if prompt is not None:
             argv.append(prompt)
         argv += ["--output-format", "json"]
+        if new_session_id and not session_id:
+            argv += ["--session-id", new_session_id]
         tools = self.tools_for(task)
         if tools:
             argv += ["--allowedTools", ",".join(tools)]
@@ -178,6 +183,8 @@ class ClaudeSessionManager:
             argv += ["--permission-mode", mode]
         if s.model:
             argv += ["--model", s.model]
+        if s.cli_isolate_mcp:
+            argv.append("--strict-mcp-config")
         argv += list(s.claude_extra_args)
         return argv
 
@@ -196,11 +203,14 @@ class ClaudeSessionManager:
             task = state.task_input
             bound = state.session_id
             resumed = bound is not None
+            planned = state.planned_session_id
+            if bound is None and planned is None and self.settings.preassign_session_id:
+                planned = await self.registry.plan_session(task_id, str(uuid.uuid4()))
             use_stdin = len(prompt.encode()) > self.settings.max_argv_prompt_bytes
             attempt = 0
             t0 = time.monotonic()
             while True:
-                argv = self.build_argv(None if use_stdin else prompt, bound, task)
+                argv = self.build_argv(None if use_stdin else prompt, bound, task, new_session_id=planned)
                 log.info("task %s: claude %s (attempt %d)", task_id, "resume" if bound else "start", attempt + 1)
                 try:
                     proc = await run_process(
@@ -218,7 +228,19 @@ class ClaudeSessionManager:
                     raise ClaudeFatalError(f"claude binary not executable: {exc}") from exc
 
                 parsed = parse_cli_json(proc.stdout)
+                if parsed is None and bound is None and planned and SESSION_IN_USE_RE.search(proc.stderr + proc.stdout):
+                    # An earlier attempt (timed out / crashed / previous process) already created our planned
+                    # session: adopt it and continue by resuming, never by starting another one.
+                    await self.registry.bind_session(task_id, planned)
+                    bound = planned
+                    resumed = True
+                    log.info("task %s: planned session %s already exists; resuming it", task_id, planned)
+                    continue
                 if parsed is not None:
+                    if bound is None and planned and parsed.session_id != planned:
+                        raise SessionInvariantError(
+                            f"claude created session {parsed.session_id} instead of the planned {planned}"
+                        )
                     if bound is None:
                         # Bind immediately so any retry resumes this session instead of starting another.
                         await self.registry.bind_session(task_id, parsed.session_id)

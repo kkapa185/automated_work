@@ -179,6 +179,7 @@ class ClaudeCLIResult(BaseModel):
 class SessionState(BaseModel):
     task_id: str
     session_id: str | None = None
+    planned_session_id: str | None = None
     workspace_path: str
     status: TaskStatus = TaskStatus.PENDING
     turn_count: int = 0
