@@ -1,78 +1,62 @@
-# jsmn.h — tiny JSON tokenizer for microcontrollers
+# jsmn.h — tiny allocation-free JSON tokenizer (C89)
 
-A single-header, allocation-free, C89, libc-free (`<stddef.h>` only) JSON tokenizer
-with the de-facto `jsmn` API. It does not build a tree or decode anything: it fills a
-caller-provided array of tokens pointing at `[start, end)` byte ranges in your input.
+A single-header, `jsmn`-API-compatible JSON tokenizer for microcontrollers: no dynamic memory, no libc
+beyond `<stddef.h>`, C89. It splits JSON into tokens that reference byte ranges of the input; it does not
+decode or fully validate JSON.
 
-## Install / use
-
-Copy `jsmn.h` into your project.
+## Use
 
 ```c
-#include "jsmn.h"                 /* in exactly one .c file: declarations + implementation */
-/* other files:  #define JSMN_HEADER  before including -> declarations only          */
-/* single file:  #define JSMN_STATIC  before including -> all functions are static   */
-
-jsmn_parser p;
-jsmntok_t t[64];
+#include "jsmn.h"
+jsmn_parser p; jsmntok_t t[128];
 jsmn_init(&p);
-int r = jsmn_parse(&p, js, len, t, 64);   /* tokens used, or negative error */
+int r = jsmn_parse(&p, js, strlen(js), t, 128);   /* tokens used, or a negative jsmnerr */
 ```
 
-## API
+* `JSMN_HEADER` — declarations only (include this way from all but one translation unit).
+* `JSMN_STATIC` — all functions `static` (header-only use in one TU).
+* `JSMN_STRICT` — lexical strictness (below). `JSMN_PARENT_LINKS` — adds `int parent` to `jsmntok_t`
+  (index of the enclosing token, `-1` for root) and makes closing-bracket matching O(1) per level.
 
-| item | meaning |
-|---|---|
-| `jsmn_init(p)` | `pos=0, toknext=0, toksuper=-1` |
-| `jsmn_parse(p, js, len, tokens, num_tokens)` | returns number of tokens, or `JSMN_ERROR_NOMEM` (-1, need more tokens), `JSMN_ERROR_INVAL` (-2, invalid input), `JSMN_ERROR_PART` (-3, input incomplete) |
-| `jsmn_parse(p, js, len, NULL, 0)` | counting mode: returns the number of tokens needed |
+Types: `jsmntype_t` (`JSMN_UNDEFINED=0, OBJECT=1, ARRAY=2, STRING=4, PRIMITIVE=8`), `jsmnerr`
+(`NOMEM=-1, INVAL=-2, PART=-3`), `jsmntok_t {type,start,end,size[,parent]}`,
+`jsmn_parser {pos,toknext,toksuper}`.
 
-Token: `type` (`JSMN_OBJECT|ARRAY|STRING|PRIMITIVE`), `start`, `end` (exclusive; strings exclude the quotes),
-`size` (direct children; an object key has size 1 when it has a value; an object's size is its number of keys),
-and, with `JSMN_PARENT_LINKS`, `parent` (index, or -1 for top-level tokens; the parent of a value is its key token).
-Tokens are emitted in document order, so a subtree is a contiguous run.
+## Semantics
 
-### Resumable parsing
-Call `jsmn_parse` again with the **same parser** after
-* `JSMN_ERROR_PART`: pass the same buffer, longer `len` (parsing resumes at the unfinished token);
-* `JSMN_ERROR_NOMEM`: pass a larger token array (existing tokens must be kept, e.g. `realloc`).
-
-### Compile-time options
-* `JSMN_STRICT` — primitives must be valid JSON numbers/`true`/`false`/`null` and be followed by a delimiter
-  (a top-level primitive at the very end of input yields `PART`); primitives and containers cannot be object keys;
-  commas/colons/values must be in valid positions (no trailing/missing commas, missing colons); raw control
-  characters in strings are rejected.
-* `JSMN_PARENT_LINKS` — adds `parent`; closing brackets are matched in O(1) instead of scanning back (O(n) per closer).
-* `JSMN_HEADER`, `JSMN_STATIC` — see above.
-
-### Behaviour notes
-* String escapes `\" \/ \\ \b \f \r \n \t \uXXXX` are validated, not decoded. Bad escape/hex → `INVAL`; truncated → `PART`.
-* Unterminated string/object/array → `PART`. Unmatched or mismatched closing bracket → `INVAL`.
-* Several top-level values are tokenised one after another.
-* Non-strict mode is lenient: any unquoted run of characters (no control chars) is a primitive, also as object key.
-* Counting mode has no token storage, so it validates strings, primitives and bracket balance only; it does not
-  check bracket *types* or (strict) comma/colon placement. If a real parse succeeds, the counts agree.
-* Not thread-safe per parser; no global state.
+* Tokens cover `[start,end)`; strings exclude the quotes; containers span opener..closer. Document order.
+  `size` = number of direct children (object keys are children of the object; a key has size 1 once it has a value).
+* Primitives: numbers, `true`, `false`, `null` and (non-strict) any other unquoted run of printable characters.
+* `tokens == NULL` is counting mode: returns the number of tokens needed. It is a fast scan that skips every
+  check needing the token array (closer/opener matching, unclosed containers at end, key/value bookkeeping),
+  so e.g. `{"a":"b"` returns 3 and `[}` returns 1. Character-level errors (bad escapes, illegal characters,
+  strict-mode lexical checks) are still reported. Counting mode does not modify `toknext`.
+* Resumable: call again with the same parser and a longer buffer. `JSMN_ERROR_PART` = more data needed (an
+  unterminated string or unclosed container/strict primitive); `JSMN_ERROR_NOMEM` = grow the token array (keep
+  its content) and call again.
+* Escapes `\" \/ \\ \b \f \r \n \t \uXXXX` are validated, not decoded; others are `JSMN_ERROR_INVAL`.
+  Unmatched/mismatched closing brackets are `JSMN_ERROR_INVAL`.
+* Strict mode: a primitive must start with `-`, a digit, `t`, `f` or `n` (else `INVAL`) but its spelling is not
+  checked (`tru`, `01`, `-` pass); it ends at whitespace, `,`, `]` or `}` (`:` does not end it); a primitive
+  reaching end of input gives `PART`; objects, arrays and primitives cannot be object keys.
+* Input is processed up to `len` bytes or the first NUL byte, whichever comes first.
 
 ## Build, test, run
 
-```sh
-make test       # builds & runs tests/test.c in 4 configs (default, STRICT, PARENT_LINKS, both),
-                # the JSMN_STATIC test and the example smoke tests. Needs only make and a C compiler.
-make examples   # build/simple, build/jsondump
-make sanitize   # optional: all configs under ASan/UBSan
-make clean
-echo '{"a":[1,2]}' | build/jsondump
-build/simple
 ```
-Everything is compiled with `-std=c89 -pedantic -Wall -Wextra -Werror`.
+make test      # test-suite in 4 configs (default, STRICT, PARENT_LINKS, both) + multi-TU + examples
+make all       # build examples into build/   (build/simple, build/jsondump)
+build/jsondump < example/sample.json
+make clean
+```
+All code compiles with `-std=c89 -pedantic -Wall -Wextra -Werror`. No external dependencies.
 
-## Layout
-* `jsmn.h` — the library. `tests/` — test-suite (names carry requirement ids), `examples/simple.c` (field
-  extraction), `examples/jsondump.c` (stdin pretty printer, grows the token array on `NOMEM`).
+Examples: `example/simple.c` extracts fields of an object; `example/jsondump.c` pretty-prints stdin and doubles
+its token array (realloc) on `JSMN_ERROR_NOMEM`.
 
 ## Design
-A single pass state machine. `toksuper` is the index of the token currently receiving children (a container, or
-an object key after `:`). Strings and primitives are only committed once complete, so a failed call leaves the
-parser at the start of the unfinished token and can simply be repeated. In strict mode, token placement is validated
-by looking at the previous non-whitespace character together with the kind of `toksuper`.
+
+`jsmn_parse` is a single-pass state machine. `toksuper` is the token that receives new children. `:` makes the
+last token (the key) the super token, `,` returns to the enclosing container. Closing brackets find the
+innermost open token (`end == -1`), by walking `parent` links or scanning backwards. Failed string/primitive
+scans restore `pos` to the token start so the call can be resumed.

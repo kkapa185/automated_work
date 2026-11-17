@@ -35,6 +35,25 @@ Run with `python benchmarks/runner.py run [--only NAME]`; it is resumable and su
 
 | benchmark | reference | status | score history | checks passed (last) | turns | cost |
 |---|---|---|---|---|---|---|
-""" + "\n".join(rows) + "\n"
+""" + "\n".join(rows) + "\n" + """
+## System improvements triggered by these benchmarks
+All of these are generic and none is specific to a project. Each has tests in `tests/`.
+
+| trigger | problem found | fix |
+|---|---|---|
+| first real-CLI runs | nested CLI loaded the account's MCP connectors (Slack/Jira/...) on every turn | `--strict-mcp-config` (`cli_isolate_mcp`) |
+| design review | a first turn that timed out before printing JSON would be retried as a *new* session | pre-assigned `--session-id`, persisted before the call; "already in use" → adopt and resume |
+| Apollo-11 (30+ min turns) | no progress visible during long turns | workspace-activity `heartbeat` events |
+| 5-hour limit hit at 13:34 | (worked) all six tasks paused, persisted `resume_at`, shared gate | — |
+| worker restart during the pause | runner processes died; `--force` would have re-attempted in-flight tasks | always resume in-flight tasks; idempotent `runner.py daemon`; stale pause records cleared |
+| usage-limit test | "resets 3pm" was parsed against the wall clock, not the orchestrator clock | parse relative to the injected clock |
+| itsdangerous attempt 2 | model memory of a similar tool overrode the spec (an undocumented `key_derivation="hmac"` default); self-derived test vectors hid it | prompts: ticket/docs are normative, no undocumented defaults, examples become exact tests, known-answer vectors are derived from the definition; review re-checks every default |
+| cost reporting | the CLI's `total_cost_usd` is cumulative per session; summing it overstated cost ~3x | per-turn deltas (`turn_cost`), `runner.py fix-costs` |
+| MATLAB hub | 81 MB of benchmark input data copied into the committed app | runner excludes the prepared inputs |
+
+Several low first-attempt scores (Pascal, itsdangerous, slugify, jsmn, hexyl) came from **inaccurate or
+ambiguous tickets that I wrote**, not from the system: it followed them exactly. Each such case is
+documented in its report, along with the corrected ticket and the rerun.
+"""
 (B / "README.md").write_text(text)
 print(text)

@@ -1,8 +1,9 @@
 {
-  "setup": ["cargo fetch --target x86_64-unknown-linux-gnu"],
-  "test": ["cargo test"],
+  "setup": ["cargo fetch"],
+  "test": ["cargo test --release"],
   "build": ["cargo build --release"],
   "smoke": [
-    {"command": "target/release/hexyl --color=never README.md"}
+    {"command": "target/release/hexyl --color=never README.md"},
+    {"command": "target/release/hexyl -V"}
   ]
 }

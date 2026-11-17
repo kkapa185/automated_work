@@ -1,10 +1,10 @@
 {
-  "setup": ["make --version"],
+  "setup": ["make clean"],
   "test": ["make test"],
-  "build": ["make examples"],
+  "build": ["make all"],
   "lint": [],
   "smoke": [
     {"command": "build/simple"},
-    {"command": "sh tests/run_examples.sh build"}
+    {"command": "sh example/smoke.sh"}
   ]
 }
