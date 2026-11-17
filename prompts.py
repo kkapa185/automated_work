@@ -16,6 +16,7 @@ from schemas import VerificationReport
 ORCH_DIR = ".orchestrator"
 REQUIREMENTS_FILE = f"{ORCH_DIR}/requirements.md"
 VERIFY_FILE = f"{ORCH_DIR}/verify.json"
+MILESTONES_FILE = f"{ORCH_DIR}/milestones.json"
 
 REVIEW_VERDICT_RE = re.compile(r"REVIEW_VERDICT:\s*\**\s*(PASS|GAPS_FIXED|GAPS_REMAIN)", re.IGNORECASE)
 
@@ -105,6 +106,13 @@ Workspace: {workspace}
    - assumptions you made about anything ambiguous;
    - the planned test strategy (which criteria are covered by which kind of test).
 4. Reply with a concise numbered execution plan: components/files, data flow, risks, and tests.
+5. If the product is LARGE (realistically more than about an hour of focused implementation, or more
+   than ~2,000 lines), split the work into 2-8 ordered milestones and write `{MILESTONES_FILE}`:
+   `{{"milestones": [{{"id": "M1", "title": "...", "goal": "...", "criteria": ["R1", "R4"]}}, ...]}}`.
+   Each milestone must end in a working, tested, verifiable state that the next one builds on (start
+   with the core/skeleton and the test harness, then features in dependency order, then hardening).
+   Every acceptance criterion must belong to exactly one milestone. For a small product do not create
+   this file.
 
 In this phase you may ONLY create files under `{ORCH_DIR}/`. Do not write application code yet.
 
@@ -122,6 +130,27 @@ Execute your plan and satisfy every acceptance criterion in `{REQUIREMENTS_FILE}
    names or docstrings).
 3. Install dependencies, run the full test suite and the program itself, and fix everything that fails.{contract}
 5. Finish with a short summary: what was built, how to run it, tests added, assumptions.
+{_constraints_block(constraints)}
+{ENGINEERING_PRINCIPLES}
+
+{_verification_block(verification_commands)}"""
+
+
+def milestone_prompt(index: int, total: int, milestone, verification_commands: list[str] | None,
+                     constraints: list[str] | None = None) -> str:
+    crit = ", ".join(milestone.criteria) or "see the milestone goal"
+    contract = "" if verification_commands else (
+        f"\n- Keep `{VERIFY_FILE}` up to date so the gate checks everything built so far (it is cumulative)."
+    )
+    return f"""## Phase 2 — Milestone {index} of {total}: {milestone.id} {milestone.title}
+Goal: {milestone.goal or milestone.title}
+Acceptance criteria in scope: {crit} (see `{REQUIREMENTS_FILE}`).
+
+Implement ONLY this milestone, on top of the work already done:
+- Complete, production-quality code for the criteria in scope; no stubs for them.
+- Automated tests for every criterion in scope; earlier milestones' tests must keep passing.
+- Install dependencies, run the full test suite and the program, and fix what fails.{contract}
+- Finish with a short summary of what this milestone delivered and anything deferred.
 {_constraints_block(constraints)}
 {ENGINEERING_PRINCIPLES}
 

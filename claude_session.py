@@ -206,7 +206,8 @@ class ClaudeSessionManager:
 
     # ------------------------------------------------------------------ turns
     async def send(
-        self, task_id: str, prompt: str, phase: TaskStatus, on_line: LineCallback | None = None
+        self, task_id: str, prompt: str, phase: TaskStatus, on_line: LineCallback | None = None,
+        milestone: str | None = None,
     ) -> TurnOutcome:
         """Send one turn to the task's session (starting it if this is the very first turn)."""
         async with self._lock(task_id):
@@ -291,6 +292,7 @@ class ClaudeSessionManager:
                 cost_usd=turn_cost(parsed.total_cost_usd, state.session_cost_usd),
                 duration_s=time.monotonic() - t0,
                 attempts=attempt + 1,
+                milestone=milestone,
                 permission_denials=[d for d in (parsed.model_extra or {}).get("permission_denials") or [] if isinstance(d, dict)],
             )
             new_state = await self.registry.record_turn(turn)

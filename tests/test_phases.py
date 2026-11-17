@@ -186,8 +186,8 @@ async def test_constraints_and_denials_reach_prompts(settings, registry, sleeps,
     orch, _ = make(settings, registry, sleeps)
     real_send = orch.sessions.send
 
-    async def send(task_id, prompt, phase, on_line=None):
-        out = await real_send(task_id, prompt, phase, on_line=on_line)
+    async def send(task_id, prompt, phase, on_line=None, **kw):
+        out = await real_send(task_id, prompt, phase, on_line=on_line, **kw)
         if phase == TaskStatus.IMPLEMENTING:
             out.turn.permission_denials.append({"tool_name": "WebFetch", "tool_input": {"url": "https://x"}})
         return out

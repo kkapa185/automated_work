@@ -42,6 +42,10 @@ class Settings(BaseModel):
     kill_grace_s: float = 5.0
     max_turns: int = 8
     max_reviews: int = 2  # requirement-review turns after verification first passes
+    # Milestone mode (large builds): extra turn budget per milestone, heal turns per milestone, global cap.
+    turns_per_milestone: int = 3
+    milestone_heal_turns: int = 2
+    max_turns_cap: int = 60
     max_transient_retries: int = 3
     backoff_base_s: float = 2.0
     backoff_max_s: float = 60.0

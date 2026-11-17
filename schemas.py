@@ -212,6 +212,7 @@ class TurnRecord(BaseModel):
     duration_s: float = 0.0
     attempts: int = 1
     permission_denials: list[dict[str, Any]] = Field(default_factory=list)
+    milestone: str | None = None
     created_at: datetime = Field(default_factory=utcnow)
 
 
@@ -275,6 +276,13 @@ def _tail(text: str, limit: int) -> str:
 
 
 # --------------------------------------------------------------------------- events / summary
+
+
+class Milestone(BaseModel):
+    id: str
+    title: str = ""
+    goal: str = ""
+    criteria: list[str] = Field(default_factory=list)
 
 
 class TaskEvent(BaseModel):

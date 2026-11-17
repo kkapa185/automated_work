@@ -16,11 +16,12 @@ from config import Settings
 from connectors import ContextHydrator
 from process import run_process
 from prompts import (
-    heal_prompt, implement_prompt, parse_review_verdict, permission_denials_note, plan_prompt, review_prompt,
+    MILESTONES_FILE, heal_prompt, implement_prompt, milestone_prompt, parse_review_verdict, permission_denials_note,
+    plan_prompt, review_prompt,
 )
 from registry import DuplicateTaskError, SessionInvariantError, SessionRegistry
 from schemas import (
-    FinalSummary, SessionState, TaskEvent, TaskInput, TaskStatus, VerificationReport,
+    FinalSummary, Milestone, SessionState, TaskEvent, TaskInput, TaskStatus, VerificationReport,
 )
 from usage_limits import Clock, UsageGate, compute_resume_at, parse_usage_limit, utc_now
 from verification import VerificationRunner
@@ -49,6 +50,34 @@ def workspace_activity(root: str, max_files: int = 50_000) -> dict[str, Any]:
             if files >= max_files:
                 return {"files": files, "bytes": size, "last_modified": newest_path, "last_modified_at": newest}
     return {"files": files, "bytes": size, "last_modified": newest_path, "last_modified_at": newest}
+
+MAX_MILESTONES = 12
+
+
+def load_milestones(workspace: str) -> list[Milestone]:
+    """Milestones the plan phase wrote to .orchestrator/milestones.json ([] when absent or invalid)."""
+    import json as _json
+
+    path = Path(workspace) / MILESTONES_FILE
+    if not path.is_file():
+        return []
+    try:
+        raw = _json.loads(path.read_text() or "{}")
+        items = raw.get("milestones", raw) if isinstance(raw, dict) else raw
+        ms = [Milestone.model_validate(m if isinstance(m, dict) else {"id": f"M{i + 1}", "title": str(m)})
+              for i, m in enumerate(items or [])]
+    except (ValueError, TypeError, AttributeError):
+        log.warning("ignoring invalid %s in %s", MILESTONES_FILE, workspace)
+        return []
+    seen, out = set(), []
+    for i, m in enumerate(ms[:MAX_MILESTONES]):
+        mid = m.id or f"M{i + 1}"
+        if mid in seen:
+            mid = f"{mid}-{i + 1}"
+        seen.add(mid)
+        out.append(m.model_copy(update={"id": mid}))
+    return out
+
 
 TERMINAL_EVENT_TYPES = frozenset({"completed", "failed", "cancelled"})
 
@@ -211,7 +240,7 @@ class TaskOrchestrator:
         await self.bus.publish(task_id, "resumed", f"usage limit reset; continuing {phase.value}", phase,
                                waited_s=round(waited, 1))
 
-    async def _turn(self, task_id: str, prompt: str, phase: TaskStatus) -> TurnOutcome:
+    async def _turn(self, task_id: str, prompt: str, phase: TaskStatus, milestone: str | None = None) -> TurnOutcome:
         """One logical turn. Usage-limit pauses re-send the same prompt to the same session afterwards
         and consume neither the turn budget nor transient retries."""
         def on_line(stream: str, line: str) -> None:
@@ -221,7 +250,7 @@ class TaskOrchestrator:
         consecutive_limits = 0
         hb = asyncio.create_task(self._heartbeat(task_id, phase))
         try:
-            return await self._turn_inner(task_id, prompt, phase, on_line, consecutive_limits)
+            return await self._turn_inner(task_id, prompt, phase, on_line, consecutive_limits, milestone)
         finally:
             hb.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -244,12 +273,13 @@ class TaskOrchestrator:
             log.info("task %s: %s %ss, %d files, last change %s", task_id, phase.value, elapsed, act["files"],
                      act["last_modified"])
 
-    async def _turn_inner(self, task_id: str, prompt: str, phase: TaskStatus, on_line, consecutive_limits: int) -> TurnOutcome:
+    async def _turn_inner(self, task_id: str, prompt: str, phase: TaskStatus, on_line, consecutive_limits: int,
+                          milestone: str | None = None) -> TurnOutcome:
         while True:
             if self.gate.is_blocked:
                 await self._wait_for_gate(task_id, phase, "usage limit reached by another task")
             try:
-                outcome = await self.sessions.send(task_id, prompt, phase, on_line=on_line)
+                outcome = await self.sessions.send(task_id, prompt, phase, on_line=on_line, milestone=milestone)
             except ClaudeUsageLimitError as exc:
                 consecutive_limits += 1
                 now = self.clock()
@@ -353,7 +383,14 @@ class TaskOrchestrator:
                 await self.bus.publish(task_id, "resumed", f"resuming session {state.session_id}", state.status,
                                        session_id=state.session_id, turn_count=state.turn_count)
 
-            if TaskStatus.IMPLEMENTING not in phases and state.turn_count < max_turns:
+            milestones = load_milestones(state.workspace_path)
+            if len(milestones) >= 2:
+                # Large build: one implement turn per milestone, each verified (and healed) before the next.
+                max_turns = min(self.settings.max_turns_cap,
+                                max(max_turns, max_turns + len(milestones) * self.settings.turns_per_milestone))
+                state, msg = await self._run_milestones(task_id, state, milestones, history, max_turns, cons)
+                last_message = msg or last_message
+            elif TaskStatus.IMPLEMENTING not in phases and state.turn_count < max_turns:
                 await self._set_status(task_id, TaskStatus.IMPLEMENTING)
                 out = await self._turn(task_id, implement_prompt(task.verification_commands, cons),
                                        TaskStatus.IMPLEMENTING)
@@ -415,6 +452,42 @@ class TaskOrchestrator:
             turns = await self.registry.turns(task_id)
             last_message = turns[-1].response if turns else None
         return await self._finish(task_id, final_status, report, last_message, failure, max_turns, verdict)
+
+    async def _run_milestones(self, task_id: str, state: SessionState, milestones: list[Milestone],
+                              history: list, max_turns: int, cons: list[str]) -> tuple[SessionState, str | None]:
+        """Drive milestones in order. Resumable: milestones that already had an implement turn are skipped,
+        and the most recent one is re-verified first (it may have been interrupted)."""
+        task = state.task_input
+        implemented = {t.milestone for t in history if t.phase == TaskStatus.IMPLEMENTING and t.milestone}
+        last_message: str | None = None
+        await self.bus.publish(task_id, "milestones", f"{len(milestones)} milestones planned", TaskStatus.IMPLEMENTING,
+                               milestones=[m.model_dump() for m in milestones], turn_budget=max_turns)
+        for idx, m in enumerate(milestones, 1):
+            if m.id not in implemented:
+                if state.turn_count >= max_turns:
+                    break
+                await self._set_status(task_id, TaskStatus.IMPLEMENTING,
+                                       f"milestone {idx}/{len(milestones)}: {m.id} {m.title}", milestone=m.id)
+                out = await self._turn(task_id, milestone_prompt(idx, len(milestones), m, task.verification_commands, cons),
+                                       TaskStatus.IMPLEMENTING, milestone=m.id)
+                last_message, state = out.result.result, out.state
+            elif any(n.id not in implemented for n in milestones[idx:]):
+                continue  # finished earlier; a later milestone also started, so nothing to re-check here
+            # verify this milestone (cumulative gate) and heal a bounded number of times
+            for attempt in range(1, self.settings.milestone_heal_turns + 1):
+                report = await self._verify(task_id, state)
+                await self.bus.publish(task_id, "milestone", f"{m.id} verification {'passed' if report.passed else 'failed'}",
+                                       TaskStatus.VERIFYING, milestone=m.id, passed=report.passed)
+                if report.passed or state.turn_count >= max_turns:
+                    break
+                await self._set_status(task_id, TaskStatus.HEALING, f"{m.id}: fixing verification (attempt {attempt})",
+                                       milestone=m.id)
+                out = await self._turn(
+                    task_id, heal_prompt(report, attempt, max_turns - state.turn_count - 1,
+                                         self.settings.max_feedback_chars, cons),
+                    TaskStatus.HEALING, milestone=m.id)
+                last_message, state = out.result.result, out.state
+        return state, last_message
 
     async def _finish(self, task_id: str, status: TaskStatus, report: VerificationReport | None,
                       last_message: str | None, failure: str | None, max_turns: int,
