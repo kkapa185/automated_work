@@ -99,6 +99,15 @@ def main() -> int:
         sid = spec.get("session_id", sid)
         if spec.get("preamble"):
             print(spec["preamble"])
+        # Like the real CLI, total_cost_usd is cumulative for the session across --resume calls.
+        cost_file = log_path + ".cost." + sid
+        try:
+            prior = float(open(cost_file).read())
+        except (FileNotFoundError, ValueError):
+            prior = 0.0
+        total = prior + float(spec.get("cost", 0.01))
+        with open(cost_file, "w") as fh:
+            fh.write(str(total))
         payload = {
             "type": "result",
             "subtype": spec.get("subtype", "error_during_execution" if spec.get("is_error") else "success"),
@@ -107,7 +116,7 @@ def main() -> int:
             "session_id": sid,
             "num_turns": 3,
             "duration_ms": 10,
-            "total_cost_usd": spec.get("cost", 0.01),
+            "total_cost_usd": round(total, 8),
             "usage": spec.get("usage", {"input_tokens": 100, "output_tokens": 50,
                                          "cache_creation_input_tokens": 0, "cache_read_input_tokens": 10}),
         }

@@ -18,7 +18,7 @@ reference package and the generated one:
   Basic takes 16 s against 4.6 s, within the 3x budget.
 
 **Process:** 4 turns on one session (`221f9d0f…`): plan → implement → review (GAPS_FIXED) → review (PASS).
-$1.07, about 5 minutes of model time.
+$0.36 (corrected), about 5 minutes of model time.
 
 **System observations:** nothing to fix. The ticket's precise tie-breaking rule was enough for
 bit-exact merges.

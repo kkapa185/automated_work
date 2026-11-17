@@ -257,3 +257,20 @@ async def test_cli_ignoring_planned_id_violates_invariant(settings, registry, fa
     sm = ClaudeSessionManager(s, registry, sleep=sleeps)
     with pytest.raises(SessionInvariantError):
         await sm.send(st.task_id, "plan", TaskStatus.PLANNING)
+
+
+def test_turn_cost_from_cumulative_session_cost():
+    from claude_session import turn_cost
+    assert turn_cost(0.0492, 0.0) == 0.0492
+    assert turn_cost(0.0921, 0.0492) == 0.0429
+    assert turn_cost(0.03, 0.05) == 0.03  # non-cumulative / reset counter
+    assert turn_cost(None, 1.0) is None
+
+
+async def test_session_cost_is_not_double_counted(settings, registry, fake_claude, sleeps):
+    fake_claude.set_scenario({"session_id": SID, "calls": [{"cost": 0.05}, {"cost": 0.2}, {"cost": 0.1}]})
+    st = await new_task(registry, settings)
+    sm = ClaudeSessionManager(settings, registry, sleep=sleeps)
+    outs = [await sm.send(st.task_id, f"p{i}", TaskStatus.HEALING) for i in range(3)]
+    assert [round(o.turn.cost_usd, 6) for o in outs] == [0.05, 0.2, 0.1]
+    assert round((await registry.get(st.task_id)).total_cost_usd, 6) == 0.35

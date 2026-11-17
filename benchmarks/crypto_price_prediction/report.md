@@ -23,7 +23,7 @@ and the 2-layer CNN is worst. `predict` (16-step forecast after the last candle)
 table of the results) and the validation plots work.
 
 **Process:** 4 turns on one session (`0c95828e…`): plan → implement → review (GAPS_FIXED) → review
-(PASS). $1.43, 21.5 min wall time. Most of that time went to the system's own verification contract,
+(PASS). $0.47 (corrected: the CLI reports cumulative session cost), 21.5 min wall time. Most of that time went to the system's own verification contract,
 which trains real models in its smoke runs.
 
 **System observations:** no failures to fix. This run validated the requirements/verify-contract design:

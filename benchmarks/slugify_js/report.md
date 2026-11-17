@@ -32,4 +32,4 @@ also contains the project's public README (API docs).
 - The generated library passes its own test-suite, has no forbidden dependencies, and handles all
   documented examples.
 
-**Process (attempt 2):** 3 turns on one session. $1.36.
+**Process (attempt 2):** 3 turns on one session. $0.63 (corrected).

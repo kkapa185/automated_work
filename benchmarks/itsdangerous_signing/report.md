@@ -26,5 +26,5 @@ the source or the tests.
 - The review turn re-checks every default and constant against the ticket.
 - Tests: `tests/test_phases.py::test_prompts_make_spec_normative_and_examples_tests`.
 
-**Process (attempt 3):** 4 turns on one session. $2.09. All 52 checks pass, including token-level
+**Process (attempt 3):** 4 turns on one session. $0.68 (corrected). All 52 checks pass, including token-level
 interoperability in both directions.

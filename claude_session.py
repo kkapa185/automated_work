@@ -59,6 +59,17 @@ class ClaudeUsageLimitError(ClaudeError):
         self.info = info
 
 
+def turn_cost(reported: float | None, session_total_before: float) -> float | None:
+    """The CLI's `total_cost_usd` is cumulative for the whole session across `--resume` calls, so a turn's
+    own cost is the increase over what the session had cost before. A smaller value means the CLI did not
+    report cumulatively (or the counter was reset), in which case the value is the turn's own cost."""
+    if reported is None:
+        return None
+    if reported >= session_total_before:
+        return round(reported - session_total_before, 8)
+    return reported
+
+
 def detect_usage_limit(proc: ProcessResult, parsed: ClaudeCLIResult | None) -> UsageLimitInfo | None:
     """Only failed invocations are inspected, so an answer that merely *discusses* limits never matches."""
     failed = proc.exit_code != 0 or parsed is None or parsed.is_error
@@ -277,7 +288,7 @@ class ClaudeSessionManager:
                 response=parsed.result,
                 is_error=parsed.is_error,
                 usage=parsed.usage,
-                cost_usd=parsed.total_cost_usd,
+                cost_usd=turn_cost(parsed.total_cost_usd, state.session_cost_usd),
                 duration_s=time.monotonic() - t0,
                 attempts=attempt + 1,
                 permission_denials=[d for d in (parsed.model_extra or {}).get("permission_denials") or [] if isinstance(d, dict)],

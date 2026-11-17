@@ -1,0 +1,7 @@
+{
+  "setup": ["go mod download"],
+  "test": ["go test ./..."],
+  "build": ["go build -o hey ."],
+  "lint": ["go vet ./..."],
+  "smoke": [{"command": ".orchestrator/smoke.sh"}]
+}

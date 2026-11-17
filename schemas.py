@@ -188,6 +188,11 @@ class SessionState(BaseModel):
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
     last_error: str | None = None
+
+    @property
+    def session_cost_usd(self) -> float:
+        """Cumulative cost of the claude session so far (turn costs are stored as deltas)."""
+        return self.total_cost_usd
     resume_at: datetime | None = None
     paused_phase: TaskStatus | None = None
     task_input: TaskInput

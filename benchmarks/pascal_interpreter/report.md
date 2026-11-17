@@ -16,7 +16,7 @@ undefined behaviour.
 | 2 | `c8787c2` | 0.85 | **Ticket ambiguity:** the reference grammar allows only one `VAR` keyword per block, so a second one is a `ParserError`. The generated interpreter accepted several, as real Pascal does. |
 | 3 | `7c307c4` | **1.00** | – |
 
-**Process (attempt 3):** 3 turns on one session: plan → implement → review (PASS). $1.12.
+**Process (attempt 3):** 3 turns on one session: plan → implement → review (PASS). $0.53 (corrected).
 
 **What changed:**
 - Tickets: the exact blank-line bytes, and the single-`VAR` rule.

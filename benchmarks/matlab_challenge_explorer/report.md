@@ -34,7 +34,7 @@ are not a function of the page text: identical level strings map to different di
 reflects an underspecified judgement field, not a defect. The rule is deterministic and documented, as
 the ticket asked.
 
-**Process:** 4 turns on one session (`a64d4880…`): plan → implement → review (GAPS_FIXED) → review (PASS). $4.74, 10 min.
+**Process:** 4 turns on one session (`a64d4880…`): plan → implement → review (GAPS_FIXED) → review (PASS). $1.55 (corrected from the cumulative-cost bug), 10 min.
 
 **System changes triggered:**
 - The runner no longer copies the benchmark's 81 MB input data into `app/`; it snapshots the prepared

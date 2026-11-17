@@ -292,6 +292,28 @@ def cmd_compare(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_fix_costs(args: argparse.Namespace) -> int:
+    """Recompute result costs for runs recorded before turn costs were stored as deltas.
+
+    The CLI's total_cost_usd is cumulative per session, so a task's true cost is the largest value any of
+    its turns reported (older records summed those cumulative values and overstate the cost)."""
+    reg = SessionRegistry(STATE / "orchestrator.db")
+    lines = [json.loads(l) for l in RESULTS.read_text().splitlines() if l.strip()]
+    for rec in lines:
+        turns = asyncio.run(reg.turns(rec["task_id"]))
+        costs = [t.cost_usd or 0.0 for t in turns]
+        if not costs:
+            continue
+        cumulative = all(b >= a for a, b in zip(costs, costs[1:]))
+        true_cost = max(costs) if cumulative and rec.get("cost_usd", 0) > max(costs) + 1e-6 else rec.get("cost_usd")
+        if true_cost != rec.get("cost_usd"):
+            log.info("%s attempt %s: cost %.2f -> %.2f", rec["name"], rec["attempt"], rec["cost_usd"], true_cost)
+            rec["cost_usd"] = round(true_cost, 4)
+    RESULTS.write_text("".join(json.dumps(r) + "\n" for r in lines))
+    reg.close()
+    return 0
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     st = load_state()
     reg = SessionRegistry(STATE / "orchestrator.db") if (STATE / "orchestrator.db").exists() else None
@@ -321,6 +343,7 @@ def main() -> int:
     c.add_argument("--attempt", type=int)
     c.add_argument("--workspace")
     sub.add_parser("status")
+    sub.add_parser("fix-costs")
     dm = sub.add_parser("daemon")
     dm.add_argument("--parallel", type=int, default=4)
     dm.add_argument("--only", nargs="*")
@@ -334,6 +357,8 @@ def main() -> int:
         return cmd_compare(args)
     if args.cmd == "daemon":
         return asyncio.run(cmd_daemon(args))
+    if args.cmd == "fix-costs":
+        return cmd_fix_costs(args)
     return cmd_status(args)
 
 
