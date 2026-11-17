@@ -22,7 +22,7 @@ from registry import DuplicateTaskError, SessionInvariantError, SessionRegistry
 from schemas import (
     FinalSummary, SessionState, TaskEvent, TaskInput, TaskStatus, VerificationReport,
 )
-from usage_limits import Clock, UsageGate, compute_resume_at, utc_now
+from usage_limits import Clock, UsageGate, compute_resume_at, parse_usage_limit, utc_now
 from verification import VerificationRunner
 
 log = logging.getLogger(__name__)
@@ -253,13 +253,15 @@ class TaskOrchestrator:
             except ClaudeUsageLimitError as exc:
                 consecutive_limits += 1
                 now = self.clock()
+                # Re-parse relative to the orchestrator's clock ("resets 3pm" means the next 3pm after *now*).
+                info = parse_usage_limit(exc.info.message, now) or exc.info
                 resume_at = compute_resume_at(
-                    exc.info, now, consecutive_limits, self.settings.usage_limit_margin_s,
+                    info, now, consecutive_limits, self.settings.usage_limit_margin_s,
                     self.settings.usage_probe_schedule_s,
                 )
-                self.gate.block(resume_at, exc.info)
-                log.warning("task %s: %s; pausing until %s", task_id, exc.info.message, resume_at.isoformat())
-                await self._wait_for_gate(task_id, phase, exc.info.message)
+                self.gate.block(resume_at, info)
+                log.warning("task %s: %s; pausing until %s", task_id, info.message, resume_at.isoformat())
+                await self._wait_for_gate(task_id, phase, info.message)
                 continue
             break
         if outcome.turn.permission_denials:

@@ -139,13 +139,9 @@ async def run_one(bench: dict[str, Any], force: bool) -> dict[str, Any]:
     orch = TaskOrchestrator(settings, registry)
     try:
         task_id = entry.get("task_id")
-        resumable = False
-        if task_id and not force:
-            try:
-                s = await registry.get(task_id)
-                resumable = not s.status.is_terminal
-            except TaskNotFoundError:
-                resumable = False
+        # An in-flight (non-terminal) task is ALWAYS resumed on its stored session, even with --force:
+        # starting a new attempt would orphan a live claude session. --force only re-runs finished ones.
+        resumable = await in_flight(registry, task_id)
         if resumable:
             log.info("%s: resuming task %s", name, task_id)
             workspace = Path(entry["workspace"])
@@ -202,6 +198,35 @@ async def run_one(bench: dict[str, Any], force: bool) -> dict[str, Any]:
         registry.close()
 
 
+async def in_flight(registry: SessionRegistry, task_id: str | None) -> bool:
+    if not task_id:
+        return False
+    try:
+        return not (await registry.get(task_id)).status.is_terminal
+    except TaskNotFoundError:
+        return False
+
+
+async def pending_work(force_names: set[str] | None = None) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """(in-flight benchmarks to resume, not-yet-run benchmarks to start), in manifest order."""
+    benches = [b for b in load_manifest() if b.get("enabled", True)]
+    st, done = load_state(), finished_names()
+    db = STATE / "orchestrator.db"
+    reg = SessionRegistry(db) if db.exists() else None
+    resume, start = [], []
+    try:
+        for b in benches:
+            tid = st.get(b["name"], {}).get("task_id")
+            if reg is not None and await in_flight(reg, tid):
+                resume.append(b)
+            elif b["name"] not in done or b["name"] in (force_names or set()):
+                start.append(b)
+    finally:
+        if reg is not None:
+            reg.close()
+    return resume, start
+
+
 def git_rev() -> str:
     try:
         return subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, capture_output=True,
@@ -214,13 +239,47 @@ async def cmd_run(args: argparse.Namespace) -> int:
     benches = [b for b in load_manifest() if b.get("enabled", True)]
     if args.only:
         benches = [b for b in benches if b["name"] in args.only]
+    resume, _ = await pending_work()
+    resume_names = {b["name"] for b in resume}
     done = finished_names()
     for b in benches:
-        if b["name"] in done and not args.force:
+        if b["name"] in done and b["name"] not in resume_names and not args.force:
             log.info("%s: already finished, skipping (use --force)", b["name"])
             continue
         rec = await run_one(b, args.force)
         log.info("%s: score=%s status=%s", b["name"], rec["score"], rec["status"])
+    return 0
+
+
+async def cmd_daemon(args: argparse.Namespace) -> int:
+    """Idempotent supervisor: resume every in-flight benchmark, then start pending ones, N at a time.
+
+    Each benchmark runs in its own subprocess (`runner.py run --only NAME`), so one crashing run cannot take
+    the others down. Relaunching the daemon after a crash, container restart or usage-limit pause is safe:
+    in-flight tasks continue on their stored claude sessions and finished ones are skipped.
+    """
+    resume, start = await pending_work()
+    queue = resume + [b for b in start if not args.only or b["name"] in args.only]
+    log.info("daemon: resuming %s; then starting %s", [b["name"] for b in resume],
+             [b["name"] for b in queue[len(resume):]])
+    running: dict[str, asyncio.subprocess.Process] = {}
+    logs = STATE / "logs"
+    logs.mkdir(parents=True, exist_ok=True)
+    while queue or running:
+        while queue and len(running) < args.parallel:
+            b = queue.pop(0)
+            fh = open(logs / f"{b['name']}.log", "a")
+            running[b["name"]] = await asyncio.create_subprocess_exec(
+                sys.executable, str(Path(__file__).resolve()), "run", "--only", b["name"],
+                stdout=fh, stderr=asyncio.subprocess.STDOUT, cwd=str(ROOT))
+            fh.close()
+            log.info("daemon: started %s (pid %s)", b["name"], running[b["name"]].pid)
+        await asyncio.sleep(10)
+        for name, proc in list(running.items()):
+            if proc.returncode is not None:
+                log.info("daemon: %s exited with %s", name, proc.returncode)
+                del running[name]
+    log.info("daemon: all benchmarks finished")
     return 0
 
 
@@ -262,6 +321,9 @@ def main() -> int:
     c.add_argument("--attempt", type=int)
     c.add_argument("--workspace")
     sub.add_parser("status")
+    dm = sub.add_parser("daemon")
+    dm.add_argument("--parallel", type=int, default=4)
+    dm.add_argument("--only", nargs="*")
     args = p.parse_args()
     STATE.mkdir(parents=True, exist_ok=True)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s",
@@ -270,6 +332,8 @@ def main() -> int:
         return asyncio.run(cmd_run(args))
     if args.cmd == "compare":
         return cmd_compare(args)
+    if args.cmd == "daemon":
+        return asyncio.run(cmd_daemon(args))
     return cmd_status(args)
 
 
