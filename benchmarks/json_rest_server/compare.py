@@ -117,9 +117,11 @@ def session(kind, app, ref):
         try:
             code, val, hdr = req(base, *r)
             out.append((code, mask(val, known), hdr.get("Access-Control-Allow-Origin")))
+            if r[0] != "GET":
+                time.sleep(0.15)  # the reference persists asynchronously; let writes settle
         except Exception as exc:  # noqa: BLE001
             out.append(("EXC", repr(exc)[:100], None))
-    time.sleep(0.5)
+    time.sleep(1.5)
     stop(p)
     try:
         persisted = mask(json.loads(db.read_text()), known)
