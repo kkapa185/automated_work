@@ -113,6 +113,22 @@
       "constraints": [
         "Do not consult or port any existing mal implementation (the impls/ directory of the mal project or forks)."
       ]
+    },
+    {
+      "name": "lua_interpreter",
+      "reference_repo": "https://github.com/lua/lua",
+      "reference_path": "/home/user/reference/lua",
+      "max_turns": 14,
+      "cli_timeout_s": 5400,
+      "verify_timeout_s": 1800
+    },
+    {
+      "name": "sql_database",
+      "reference_repo": "https://github.com/sqlite/sqlite",
+      "reference_path": "/home/user/reference/sqlite",
+      "max_turns": 16,
+      "cli_timeout_s": 5400,
+      "verify_timeout_s": 1800
     }
   ]
 }

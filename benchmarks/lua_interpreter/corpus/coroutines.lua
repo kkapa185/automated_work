@@ -1,0 +1,15 @@
+local co = coroutine.create(function(a, b)
+  print("start", a, b)
+  local c = coroutine.yield(a + b)
+  print("got", c)
+  local d, e = coroutine.yield(c * 2)
+  return d + e
+end)
+print(coroutine.resume(co, 1, 2)); print(coroutine.status(co)); print(coroutine.resume(co, 10))
+print(coroutine.resume(co, 3, 4)); print(coroutine.status(co), coroutine.resume(co))
+local gen = coroutine.wrap(function() for i = 1, 3 do coroutine.yield(i) end end) print(gen(), gen(), gen())
+local function producer() return coroutine.wrap(function() for _, w in ipairs({"a", "b", "c"}) do coroutine.yield(w) end end) end
+for w in producer() do io.write(w) end print()
+print(coroutine.isyieldable(), type(coroutine.running()), select(2, coroutine.running()))
+local bad = coroutine.create(function() error("boom") end) print(coroutine.resume(bad))
+local co2 = coroutine.create(function() coroutine.yield() end) coroutine.resume(co2) print(coroutine.close(co2), coroutine.status(co2))

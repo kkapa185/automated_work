@@ -1,0 +1,10 @@
+SELECT 1, 1.0, 1.5e3, -0.0, 7/2, 7/2.0, 7%3, -7%3, 2*3+4, (2+3)*4, 1/0, 1.0/0;
+SELECT typeof(1), typeof(1.0), typeof('1'), typeof(NULL), typeof(x'ff'), typeof(1+1.0);
+SELECT CAST('42' AS INTEGER), CAST('3.9' AS INTEGER), CAST(3.9 AS INTEGER), CAST(12 AS TEXT) || 'x', CAST('abc' AS REAL);
+CREATE TABLE aff(i INTEGER, r REAL, t TEXT, n NUMERIC, b BLOB);
+INSERT INTO aff VALUES ('5', '5', 5, '5.0', '5');
+SELECT typeof(i), typeof(r), typeof(t), typeof(n), typeof(b), i, r, t, n FROM aff;
+SELECT 1 = 1.0, '1' = 1, NULL = NULL, NULL IS NULL, 1 IS NOT NULL, 3 BETWEEN 1 AND 5, 'b' IN ('a', 'b'), 5 NOT IN (1, 2, NULL);
+SELECT 'abc' < 'abd', 10 < 9, '10' < '9', 1 < 'a', x'00' > 'z';
+SELECT round(2.5), round(-2.5), round(3.14159, 2), abs(-7), max(1, 5, 3), min('b', 'a'), coalesce(NULL, NULL, 'z'), ifnull(NULL, 0), nullif(3, 3), nullif(3, 4);
+SELECT 9223372036854775807 + 1, 2147483648 * 2, 0.1 + 0.2, 100000000000000000000, 1e308 * 10;

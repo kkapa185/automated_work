@@ -1,0 +1,16 @@
+CREATE TABLE users(id INTEGER PRIMARY KEY, name TEXT NOT NULL, age INTEGER, email TEXT UNIQUE);
+INSERT INTO users(name, age, email) VALUES ('alice', 30, 'a@x.io'), ('bob', 25, 'b@x.io'), ('carol', NULL, 'c@x.io');
+INSERT INTO users VALUES (10, 'dave', 41, NULL);
+INSERT INTO users(name, age) VALUES ('erin', 35);
+SELECT * FROM users;
+SELECT id, name FROM users WHERE age > 28 ORDER BY age DESC;
+SELECT count(*), count(age), sum(age), avg(age), min(age), max(age), total(age) FROM users;
+SELECT name FROM users WHERE age IS NULL OR email IS NULL ORDER BY name;
+SELECT last_insert_rowid();
+UPDATE users SET age = age + 1 WHERE name LIKE 'a%';
+SELECT changes();
+DELETE FROM users WHERE id = 2;
+SELECT id, name, age FROM users ORDER BY id;
+INSERT INTO users(name, email) VALUES ('frank', 'a@x.io');
+INSERT INTO users(age) VALUES (5);
+SELECT count(*) FROM users;

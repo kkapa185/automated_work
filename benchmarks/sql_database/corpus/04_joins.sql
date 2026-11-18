@@ -1,0 +1,16 @@
+CREATE TABLE dept(id INTEGER PRIMARY KEY, name TEXT);
+CREATE TABLE emp(id INTEGER PRIMARY KEY, name TEXT, dept_id INTEGER, salary INTEGER, manager_id INTEGER);
+INSERT INTO dept VALUES (1, 'eng'), (2, 'sales'), (3, 'empty');
+INSERT INTO emp VALUES (1, 'ann', 1, 120, NULL), (2, 'ben', 1, 100, 1), (3, 'cid', 2, 90, 1), (4, 'dot', 2, 95, 3), (5, 'eve', NULL, 70, 1);
+SELECT e.name, d.name FROM emp e JOIN dept d ON e.dept_id = d.id ORDER BY e.id;
+SELECT e.name, d.name FROM emp e LEFT JOIN dept d ON e.dept_id = d.id ORDER BY e.id;
+SELECT d.name, count(e.id), coalesce(sum(e.salary), 0) FROM dept d LEFT JOIN emp e ON e.dept_id = d.id GROUP BY d.id ORDER BY d.name;
+SELECT e.name, m.name AS manager FROM emp e LEFT JOIN emp m ON e.manager_id = m.id ORDER BY e.name;
+SELECT d.name, e.name FROM dept d CROSS JOIN emp e WHERE e.salary > 99 ORDER BY 1, 2;
+SELECT dept_id, avg(salary) AS a FROM emp GROUP BY dept_id HAVING a > 80 ORDER BY dept_id;
+SELECT name FROM emp WHERE salary > (SELECT avg(salary) FROM emp) ORDER BY name;
+SELECT name FROM emp e WHERE EXISTS (SELECT 1 FROM emp x WHERE x.manager_id = e.id) ORDER BY name;
+SELECT name, (SELECT name FROM dept WHERE id = emp.dept_id) FROM emp ORDER BY id;
+SELECT name FROM dept WHERE id NOT IN (SELECT dept_id FROM emp WHERE dept_id IS NOT NULL);
+SELECT * FROM emp NATURAL JOIN (SELECT 1 AS dept_id) ORDER BY id;
+SELECT e.name FROM emp e JOIN dept d USING (id) ORDER BY e.name;

@@ -1,0 +1,12 @@
+local function counter() local n = 0 return function() n = n + 1 return n end end
+local c1, c2 = counter(), counter(); print(c1(), c1(), c2(), c1())
+local fs = {} for i = 1, 3 do fs[i] = function() return i end end print(fs[1](), fs[2](), fs[3]())
+local function fib(n) if n < 2 then return n end return fib(n - 1) + fib(n - 2) end print(fib(25))
+local function sum(...) local s = 0 for _, v in ipairs({...}) do s = s + v end return s, select("#", ...) end print(sum(1, 2, 3, 4))
+local function tail(n) if n == 0 then return "done" end return tail(n - 1) end print(tail(100000))
+local s = 0 for i = 1, 1000000 do s = s + i end print(s)
+for i = 10, 1, -3 do io.write(i, " ") end print()
+for i = 1.0, 2.0, 0.5 do io.write(i, " ") end print()
+do local i = 1 ::top:: if i <= 3 then io.write("g", i, " ") i = i + 1 goto top end end print()
+local x <const> = 42 print(x)
+local t = {n = 0} function t:inc(k) self.n = self.n + (k or 1) return self end print(t:inc():inc(5).n)
