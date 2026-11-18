@@ -1,0 +1,5 @@
+{"milestones":[
+{"id":"M1","title":"Core language + harness","goal":"Lexer, parser, resolver, evaluator, values/tables, metatables, errors, closures, goto, close, CLI, base lib essentials, test runner","criteria":["R1","R2","R3","R4","R5","R6","R7","R8","R9","R10","R11","R12","R21"]},
+{"id":"M2","title":"Standard libraries","goal":"string (patterns, format, pack), table, math, utf8, coroutine, os, io, debug","criteria":["R13","R14","R15","R16","R17","R18","R19"]},
+{"id":"M3","title":"Hardening, performance, docs","goal":"Performance tuning, edge-case tests, README","criteria":["R20","R22"]}
+]}

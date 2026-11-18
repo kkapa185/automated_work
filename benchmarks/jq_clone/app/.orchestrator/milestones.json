@@ -1,0 +1,4 @@
+{"milestones":[
+{"id":"M1","title":"Core: lexer, parser, evaluator, JSON I/O, CLI skeleton, test harness","goal":"Working jq language core (paths, operators, control flow, functions, reduce/foreach, destructuring, assignment), JSON parser/serializer with jq number formatting, CLI options and error/exit codes, manual-example test harness.","criteria":["R1","R2","R3","R4","R5","R6","R7","R8","R13","R14","R15","R17"]},
+{"id":"M2","title":"Builtins, formats, regex, dates","goal":"All manual builtins, @formats, regex family, date functions, math, streaming, SQL-style; all 259 manual examples pass; per-builtin unit tests; README.","criteria":["R9","R10","R11","R12","R16"]}
+]}

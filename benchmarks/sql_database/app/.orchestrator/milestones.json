@@ -1,0 +1,5 @@
+{"milestones": [
+ {"id":"M1","title":"Core: tokenizer, parser, expression engine, shell, in-memory tables, simple SELECT/DML","goal":"Skeleton, test harness, shell output formats, types/affinity, expressions & scalar functions, CREATE/INSERT/UPDATE/DELETE/SELECT basics, error handling","criteria":["R6","R10","R12","R13","R14","R21","R22","R23","R25","R26","R27","R28","R29","R30","R31"]},
+ {"id":"M2","title":"Relational query features","goal":"Joins, subqueries, grouping/aggregates, ordering, compounds, CTEs, windows, views","criteria":["R15","R16","R17","R18","R19","R20","R24","R7"]},
+ {"id":"M3","title":"Transactions, persistence, DDL & advanced DML","goal":"File storage, transactions/savepoints, statement atomicity, ALTER, schema table, upsert, indexes, triggers, pragmas","criteria":["R1","R2","R3","R4","R5","R8","R9","R11","R32"]}
+]}

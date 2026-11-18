@@ -8,13 +8,15 @@ response shapes and status codes.
 
 * Top-level arrays become collections (`GET/POST /posts`, `GET/PUT/PATCH/DELETE /posts/:id`), top-level
   objects become singular resources (`GET/PUT/PATCH /profile`). Ids are strings; `POST` without an id
-  generates a unique random id. Responses are JSON (pretty-printed with 2-space indentation), 201 for
-  creation, 404 `{"error": "NotFound"}` for unknown routes/ids; CORS headers as in the README.
+  always generates a new unique random id (an `id` in the request body is ignored). Responses are JSON
+  (pretty-printed with 2-space indentation), 201 for creation, 404 with body `{"error": "Not Found"}` for
+  unknown routes/ids; CORS headers as in the README.
 * Query parameters exactly as documented: conditions `field:op=value` (`eq ne lt lte gt gte in contains
-  startsWith endsWith`, nested fields with dots, type-aware comparison), `_sort=a,-b`,
+  startsWith endsWith`, nested fields with dots, type-aware comparison), `_sort=a,-b` (strings compared case-insensitively, locale order),
   `_page`/`_per_page` (paginated envelope `{first, prev, next, last, pages, items, data}`), `_embed`
   (children via `<singular>Id` foreign keys and parents), `_where` JSON queries (`and`/`or`/`not`),
-  `_dependent` for cascading deletes.
+  `_dependent` for cascading deletes; deleting an item without `_dependent` keeps the children
+  but sets their foreign key (e.g. `postId`) to `null`.
 * Mutations are persisted to the database file (written atomically) and survive restarts; the file is
   re-read on start. `--static` serves files (default `./public` if it exists).
 

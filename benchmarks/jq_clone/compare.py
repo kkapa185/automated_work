@@ -43,7 +43,7 @@ def norm(lines):
     for l in lines:
         try:
             out.append(json.dumps(json.loads(l), sort_keys=False))
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, RecursionError):  # deeply nested values: compare the text
             out.append(l.strip())
     return out
 

@@ -1,0 +1,6 @@
+{
+  "setup": ["python3 -m pip install -q -r requirements.txt"],
+  "test": ["python3 -m pytest tests -q"],
+  "build": ["python3 -m compileall -q jqpy"],
+  "smoke": [{"command": "./scripts_smoke.sh"}]
+}

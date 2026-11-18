@@ -1,16 +1,18 @@
-# LANG-54: A Lua 5.4 interpreter
+# LANG-54: A Lua 5.5 interpreter
 
-Implement a complete interpreter for the Lua 5.4 language and its standard libraries, executable as
+Implement a complete interpreter for the Lua 5.5 language and its standard libraries, executable as
 `./lua [script [args]]` from the workspace root (any implementation language except Lua itself; do not
 wrap, embed or port an existing Lua implementation such as PUC-Lua/liblua, LuaJIT, gopher-lua, moonsharp,
-fengari or lupa). The Lua 5.4 Reference Manual is provided in `docs/manual.of` and is **normative**.
+fengari or lupa). The Lua 5.5 Reference Manual is provided in `docs/manual.of` and is **normative** (Lua 5.5, not 5.4: e.g.
+`global` declarations such as `global <const> *`, `global x, y`, and the 5.5 rules for undeclared globals and
+loop variables are part of the language).
 
 Scope:
 * The whole language: all value types (nil, boolean, integer/float subtypes with Lua 5.4 conversion
   and formatting rules, strings as byte arrays, tables with array/hash parts, functions, coroutines),
   lexical rules (long strings/comments, escapes incl. `\z`, `\x`, `\u{...}`, numerals incl. hex floats),
   all operators with correct precedence (integer division, floor modulo, bitwise ops, `..`, `#`),
-  local attributes `<const>`/`<close>`, varargs, multiple assignment/returns, closures/upvalues,
+  local and global declarations with attributes `<const>`/`<close>` (Lua 5.5 `global` statement), varargs, multiple assignment/returns, closures/upvalues,
   `goto`/labels, numeric and generic `for`, proper tail calls, metatables and all metamethods
   (`__index __newindex __call __eq __lt __le __concat __len __unm __add`..., `__close`, `__gc` may be a
   no-op, `__mode` may be ignored, `__name`, `__tostring`, `__pairs`), error values and messages with

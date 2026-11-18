@@ -1,0 +1,9 @@
+{
+  "name": "json-rest-server",
+  "version": "1.0.0",
+  "description": "Zero-code REST API server backed by a JSON/JSON5 file",
+  "private": true,
+  "bin": { "serve": "./serve" },
+  "scripts": { "start": "./serve db.json", "test": "node --test test/*.test.js" },
+  "engines": { "node": ">=20" }
+}

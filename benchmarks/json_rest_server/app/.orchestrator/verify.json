@@ -1,0 +1,9 @@
+{
+  "setup": ["node --version"],
+  "test": ["node --test test/*.test.js"],
+  "build": ["node --check src/app.js"],
+  "smoke": [
+    {"command": "./serve --help"},
+    {"command": "./serve db.json --port 3917", "url": "http://127.0.0.1:3917/posts/1", "timeout_s": 60}
+  ]
+}
