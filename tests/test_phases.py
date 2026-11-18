@@ -263,3 +263,18 @@ def test_prompts_make_spec_normative_and_examples_tests():
 def test_prompts_require_worst_case_performance_tests():
     from prompts import implement_prompt
     assert "worst-case input shapes" in implement_prompt(None)
+
+
+async def test_interrupted_first_turn_with_bound_session_still_plans(settings, registry, sleeps, fake_claude):
+    """A usage-limit pause during the plan turn leaves a bound session but no PLANNING turn: resuming must
+    still hydrate and plan (on the same session), not jump straight to implementation."""
+    fake_claude.set_scenario({"session_id": SID, "calls": [{}, PASS]})
+    orch, _ = make(settings, registry, sleeps)
+    st = await orch.submit(task(), start=False)
+    await registry.bind_session(st.task_id, SID)
+    await registry.set_pause(st.task_id, START - timedelta(minutes=1), TaskStatus.PLANNING, "limit")
+    summary = await orch.run(st.task_id)
+    turns = await registry.turns(st.task_id)
+    assert [t.phase for t in turns][:2] == [TaskStatus.PLANNING, TaskStatus.IMPLEMENTING]
+    assert "Phase 1" in prompts(fake_claude)[0] and fake_claude.argvs()[0][0:2] == ["--resume", SID]
+    assert summary.status == TaskStatus.COMPLETED

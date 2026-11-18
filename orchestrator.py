@@ -355,8 +355,15 @@ class TaskOrchestrator:
             await self._prepare_workspace(state)
             history = await self.registry.turns(task_id)
             phases = [t.phase for t in history]
-            if state.session_id is None:
-                # No session exists yet, so (re)starting from hydration cannot create a duplicate session.
+            if state.session_id is not None and (state.resume_at is not None or state.status == TaskStatus.PAUSED_USAGE_LIMIT):
+                # A pause persisted by a previous process: honour the gate, then clear the stale record.
+                if self.gate.is_blocked:
+                    await self._wait_for_gate(task_id, state.paused_phase or state.status, "resuming after restart")
+                await self.registry.clear_pause(task_id, state.paused_phase or TaskStatus.VERIFYING)
+            if TaskStatus.PLANNING not in phases:
+                # Planning has not completed yet. That includes a first turn interrupted after its session was
+                # created (e.g. a usage-limit pause): the plan prompt then *resumes* that same session, so no
+                # duplicate session is created and planning/hydration are never skipped.
                 await self._set_status(task_id, TaskStatus.HYDRATING)
                 ctx = await self.hydrator.hydrate(
                     task.description, task.context_sources, task.auto_detect_sources, state.workspace_path
@@ -375,11 +382,6 @@ class TaskOrchestrator:
                 state = out.state
                 phases.append(TaskStatus.PLANNING)
             else:
-                if state.resume_at is not None or state.status == TaskStatus.PAUSED_USAGE_LIMIT:
-                    # A pause persisted by a previous process: honour the gate, then clear the stale record.
-                    if self.gate.is_blocked:
-                        await self._wait_for_gate(task_id, state.paused_phase or state.status, "resuming after restart")
-                    await self.registry.clear_pause(task_id, state.paused_phase or TaskStatus.VERIFYING)
                 await self.bus.publish(task_id, "resumed", f"resuming session {state.session_id}", state.status,
                                        session_id=state.session_id, turn_count=state.turn_count)
 
