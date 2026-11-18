@@ -164,6 +164,15 @@
       "max_turns": 12,
       "cli_timeout_s": 5400,
       "verify_timeout_s": 1800
+    },
+    {
+      "name": "nanogpt_training",
+      "reference_repo": "https://github.com/karpathy/nanoGPT",
+      "reference_path": "/home/user/reference/nanoGPT",
+      "max_turns": 12,
+      "cli_timeout_s": 5400,
+      "verify_timeout_s": 3600,
+      "compare_timeout_s": 14400
     }
   ]
 }

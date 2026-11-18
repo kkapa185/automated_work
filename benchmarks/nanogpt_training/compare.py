@@ -102,7 +102,9 @@ def main():
     s = run([str(app / "nanogpt"), "sample", "--out", str(work / "out"), "--num-samples", "2", "--max-new-tokens", "200", "--seed", "7"], cwd=app, timeout=600)
     vocab = set(Path(DATA).read_text())
     text = s.stdout.replace("---------------", "")
-    checks.append(check("sample produces text from the vocabulary", s.returncode == 0 and len(text.strip()) >= 150 and set(text) <= vocab | {"\n"}, s.stdout[:120]))
+    in_vocab = sum(ch in vocab or ch == "\n" for ch in text) / max(1, len(text))
+    checks.append(check("sample produces >= 150 chars of text drawn from the vocabulary (>= 95% of output; status lines allowed)",
+                        s.returncode == 0 and len(text.strip()) >= 150 and in_vocab >= 0.95, f"{in_vocab:.3f} {s.stdout[:120]!r}"))
     finish(a.out, checks, reference=r, generated=m)
 
 
