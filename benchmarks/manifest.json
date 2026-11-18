@@ -101,6 +101,18 @@
       "constraints": [
         "Do not consult other CommonMark implementations' source code (cmark, commonmark.js, markdown-it, ...)."
       ]
+    },
+    {
+      "name": "mal_lisp",
+      "reference_repo": "https://github.com/kanaka/mal",
+      "reference_path": "/home/user/reference/mal",
+      "max_turns": 14,
+      "cli_timeout_s": 5400,
+      "verify_timeout_s": 1800,
+      "compare_timeout_s": 14400,
+      "constraints": [
+        "Do not consult or port any existing mal implementation (the impls/ directory of the mal project or forks)."
+      ]
     }
   ]
 }
