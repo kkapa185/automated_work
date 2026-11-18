@@ -82,6 +82,25 @@
       "reference_repo": "https://github.com/tastejs/todomvc",
       "reference_path": "/home/user/reference/todomvc",
       "max_turns": 10
+    },
+    {
+      "name": "jq_clone",
+      "reference_repo": "https://github.com/jqlang/jq",
+      "reference_path": "/home/user/reference/jq",
+      "max_turns": 12,
+      "cli_timeout_s": 5400,
+      "verify_timeout_s": 1800
+    },
+    {
+      "name": "commonmark_renderer",
+      "reference_repo": "https://github.com/commonmark/cmark",
+      "reference_path": "/home/user/reference/cmark",
+      "max_turns": 12,
+      "cli_timeout_s": 5400,
+      "verify_timeout_s": 1800,
+      "constraints": [
+        "Do not consult other CommonMark implementations' source code (cmark, commonmark.js, markdown-it, ...)."
+      ]
     }
   ]
 }
