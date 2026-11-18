@@ -32,8 +32,14 @@ def main():
     a = ap.parse_args()
     app, ref = Path(a.app).resolve(), Path(a.reference)
     checks, detail = [], {}
+    # mal tests expect to run from impls/<impl>/ (they read ../tests/*.mal etc.), so mount the app there
+    # (copied, not symlinked: `..` from a symlinked directory resolves to its physical parent)
+    layout = Path(tempfile.mkdtemp()) / "impls"
+    layout.mkdir()
+    shutil.copytree(app, layout / "gen", symlinks=True, ignore=shutil.ignore_patterns(".git", "node_modules", "__pycache__"))
+    shutil.copytree(ref / "impls" / "tests", layout / "tests")
     for step in STEPS:
-        p, f, soft, total = runtest(ref, app, step, {})
+        p, f, soft, total = runtest(ref, layout / "gen", step, {})
         detail[step] = {"passed": p, "failed": f, "soft_failed": soft, "total": total}
         checks.append(check(f"{step}: no hard failures", total > 0 and f == 0 and p > 0, f"{p} passed, {f} failed, {soft} soft of {total}"))
         checks.append(check(f"{step}: all tests incl. optional pass", total > 0 and p == total, f"{p}/{total}"))
@@ -41,7 +47,8 @@ def main():
     with tempfile.TemporaryDirectory() as d:
         impls = Path(d) / "impls"
         shutil.copytree(ref / "impls" / "mal", impls / "mal")
-        (impls / "gen").symlink_to(app)
+        shutil.copytree(layout / "gen", impls / "gen", symlinks=True)
+        shutil.copytree(ref / "impls" / "tests", impls / "tests")
         for step in ("step2_eval", "step4_if_fn_do", "step9_try"):
             p, f, soft, total = runtest(ref, impls / "mal", step, {"MAL_IMPL": "gen"}, timeout_s=2400)
             detail["self-hosted " + step] = {"passed": p, "failed": f, "total": total}

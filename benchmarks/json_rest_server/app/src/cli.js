@@ -1,34 +1,36 @@
 'use strict';
 const fs = require('node:fs');
-const { createApp } = require('./app');
+const path = require('node:path');
+const { Store } = require('./store');
+const { createServer } = require('./server');
 
-const HELP = `Usage: serve <db.json|db.json5> [options]
+const USAGE = `Usage: serve <db.json|db.json5> [options]
 
 Options:
-  -p, --port <port>     Port (default: 3000)
-  -H, --host <host>     Host (default: 127.0.0.1)
+  -p, --port <port>     Port (default 3000)
+  -H, --host <host>     Host (default 127.0.0.1)
   -s, --static <dir>    Static files directory (repeatable; ./public is served if it exists)
-  -h, --help            Show this help
-`;
+  -h, --help            Show this help`;
 
 function parseArgs(argv) {
-  const o = { port: 3000, host: '127.0.0.1', statics: [], file: null, help: false };
+  const o = { file: null, port: 3000, host: '127.0.0.1', static: [], help: false };
   for (let i = 0; i < argv.length; i++) {
-    let a = argv[i], inline;
-    if (a.startsWith('--') && a.includes('=')) { inline = a.slice(a.indexOf('=') + 1); a = a.slice(0, a.indexOf('=')); }
+    let a = argv[i], inline = null;
+    const m = /^(--[a-z-]+)=(.*)$/.exec(a);
+    if (m) { a = m[1]; inline = m[2]; }
     const val = () => {
-      if (inline !== undefined) return inline;
+      if (inline !== null) return inline;
       if (i + 1 >= argv.length) throw new Error(`Missing value for ${a}`);
       return argv[++i];
     };
     if (a === '-h' || a === '--help') o.help = true;
     else if (a === '-p' || a === '--port') {
       const v = val();
-      if (!/^\d+$/.test(v) || Number(v) > 65535) throw new Error(`Invalid port: ${v}`);
-      o.port = Number(v);
+      if (!/^\d+$/.test(v) || +v > 65535) throw new Error(`Invalid port: ${v}`);
+      o.port = +v;
     } else if (a === '-H' || a === '--host') o.host = val();
-    else if (a === '-s' || a === '--static') o.statics.push(val());
-    else if (a.startsWith('-') && a.length > 1) throw new Error(`Unknown option: ${a}`);
+    else if (a === '-s' || a === '--static') o.static.push(val());
+    else if (a.startsWith('-') && a !== '-') throw new Error(`Unknown option: ${a}`);
     else if (o.file === null) o.file = a;
     else throw new Error(`Unexpected argument: ${a}`);
   }
@@ -36,33 +38,28 @@ function parseArgs(argv) {
 }
 
 function main(argv) {
-  let o;
-  try { o = parseArgs(argv); } catch (e) { console.error(e.message + '\n' + HELP); return 1; }
-  if (o.help) { console.log(HELP); return 0; }
-  if (!o.file) { console.error('Missing database file\n' + HELP); return 1; }
-  const staticDirs = [...o.statics];
-  if (fs.existsSync('./public') && fs.statSync('./public').isDirectory() && !staticDirs.includes('./public')) {
-    staticDirs.unshift('./public');
+  let opts;
+  try { opts = parseArgs(argv); } catch (e) { console.error(e.message + '\n\n' + USAGE); return process.exit(1); }
+  if (opts.help) { console.log(USAGE); return process.exit(0); }
+  if (!opts.file) { console.error(USAGE); return process.exit(1); }
+  let store;
+  try { store = new Store(opts.file); } catch (e) {
+    console.error(`Cannot load database ${opts.file}: ${e.message}`);
+    return process.exit(1);
   }
-  let app;
-  try { app = createApp({ dbPath: o.file, staticDirs }); } catch (e) {
-    console.error(`Cannot load ${o.file}: ${e.message}`);
-    return 1;
-  }
-  app.server.on('error', (e) => { console.error(e.message); process.exit(1); });
-  app.server.listen(o.port, o.host, () => {
-    const port = app.server.address().port;
+  const dirs = [...opts.static];
+  const pub = path.resolve('public');
+  if (fs.existsSync(pub) && fs.statSync(pub).isDirectory() && !dirs.some((d) => path.resolve(d) === pub)) dirs.push(pub);
+  const server = createServer(store, { staticDirs: dirs });
+  server.on('error', (e) => { console.error(`Server error: ${e.message}`); process.exit(1); });
+  server.listen(opts.port, opts.host, () => {
+    const port = server.address().port;
     console.log(`JSON Server started on PORT :${port}`);
-    console.log(`http://${o.host}:${port}`);
+    console.log(`http://${opts.host}:${port}`);
   });
-  const stop = () => app.server.close(() => process.exit(0));
+  const stop = () => { server.close(() => process.exit(0)); setTimeout(() => process.exit(0), 500).unref(); };
   process.on('SIGINT', stop);
   process.on('SIGTERM', stop);
-  return null;
 }
 
-if (require.main === module || process.env.SERVE_MAIN) {
-  const code = main(process.argv.slice(2));
-  if (code !== null) process.exit(code);
-}
 module.exports = { main, parseArgs };

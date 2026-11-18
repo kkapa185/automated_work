@@ -1,0 +1,304 @@
+;; Testing cons function
+(cons 1 (list))
+;=>(1)
+(cons 1 (list 2))
+;=>(1 2)
+(cons 1 (list 2 3))
+;=>(1 2 3)
+(cons (list 1) (list 2 3))
+;=>((1) 2 3)
+(def! a (list 2 3))
+;=>(2 3)
+(cons 1 a)
+;=>(1 2 3)
+a
+;=>(2 3)
+
+;; Testing concat function
+(concat)
+;=>()
+(concat (list 1 2))
+;=>(1 2)
+(concat (list 1 2) (list 3 4))
+;=>(1 2 3 4)
+(concat (list 1 2) (list 3 4) (list 5 6))
+;=>(1 2 3 4 5 6)
+(concat (concat))
+;=>()
+(concat (list) (list))
+;=>()
+(def! a (list 1 2))
+;=>(1 2)
+(def! b (list 3 4))
+;=>(3 4)
+(concat a b (list 5 6))
+;=>(1 2 3 4 5 6)
+a
+;=>(1 2)
+b
+;=>(3 4)
+
+;; Testing regular quote
+(quote 7)
+;=>7
+(quote (1 2 3))
+;=>(1 2 3)
+(quote (1 2 (3 4)))
+;=>(1 2 (3 4))
+(prn (quote abc))
+;abc
+;=>nil
+(quote abc)
+;=>abc
+
+;; Testing simple quasiquote
+(quasiquote 7)
+;=>7
+(quasiquote (1 2 3))
+;=>(1 2 3)
+(quasiquote (a lst d))
+;=>(a lst d)
+(quasiquote nil)
+;=>nil
+(quasiquote ())
+;=>()
+(quasiquote (()))
+;=>(())
+(quasiquote 5)
+;=>5
+(quasiquote a)
+;=>a
+
+;; Testing unquote
+(quasiquote (unquote 7))
+;=>7
+(def! a 8)
+;=>8
+(quasiquote a)
+;=>a
+(quasiquote (unquote a))
+;=>8
+(quasiquote (1 a 3))
+;=>(1 a 3)
+(quasiquote (1 (unquote a) 3))
+;=>(1 8 3)
+(def! b (quote (1 "b" "d")))
+;=>(1 "b" "d")
+(quasiquote (1 b 3))
+;=>(1 b 3)
+(quasiquote (1 (unquote b) 3))
+;=>(1 (1 "b" "d") 3)
+(quasiquote ((unquote 1) (unquote 2)))
+;=>(1 2)
+
+;; Guide examples
+(def! lst (quote (b c)))
+;=>(b c)
+(quasiquote (a lst d))
+;=>(a lst d)
+(quasiquote (a (unquote lst) d))
+;=>(a (b c) d)
+(quasiquote (a (splice-unquote lst) d))
+;=>(a b c d)
+
+;; Testing splice-unquote
+(def! c (quote (1 "b" "d")))
+;=>(1 "b" "d")
+(quasiquote (1 c 3))
+;=>(1 c 3)
+(quasiquote (1 (splice-unquote c) 3))
+;=>(1 1 "b" "d" 3)
+(quasiquote (1 (splice-unquote c)))
+;=>(1 1 "b" "d")
+(quasiquote ((splice-unquote c) 2))
+;=>(1 "b" "d" 2)
+(quasiquote ((splice-unquote c) (splice-unquote c)))
+;=>(1 "b" "d" 1 "b" "d")
+
+;; Testing symbol equality
+(= (quote abc) (quote abc))
+;=>true
+(= (quote abc) (quote abcd))
+;=>false
+(= (quote abc) "abc")
+;=>false
+(= "abc" (quote abc))
+;=>false
+(= "abc" (str (quote abc)))
+;=>true
+(= (quote abc) nil)
+;=>false
+(= nil (quote abc))
+;=>false
+
+;; Testing ' ` ~ ~@ reader macros
+'1
+;=>1
+'abc
+;=>abc
+'(1 2 3)
+;=>(1 2 3)
+`1
+;=>1
+`(1 2 3)
+;=>(1 2 3)
+`(a lst d)
+;=>(a lst d)
+`(a ~lst d)
+;=>(a (b c) d)
+`(a ~@lst d)
+;=>(a b c d)
+`(1 ~@c)
+;=>(1 1 "b" "d")
+(quasiquote (1 ~a 3))
+;=>(1 8 3)
+'(a ~b)
+;=>(a (unquote b))
+'(~@x)
+;=>((splice-unquote x))
+
+;; Testing cons, concat, vec with vectors
+(cons 1 [])
+;=>(1)
+(cons [1] [2 3])
+;=>([1] 2 3)
+(cons 1 [2 3])
+;=>(1 2 3)
+(concat [1 2] (list 3 4) [5 6])
+;=>(1 2 3 4 5 6)
+(concat [1 2])
+;=>(1 2)
+(vec (list 1 2))
+;=>[1 2]
+(vec (list))
+;=>[]
+(vec [1 2])
+;=>[1 2]
+(vec nil)
+;/.*Error.*
+
+;; Testing quasiquote with vectors
+(quasiquote [])
+;=>[]
+(quasiquote [[]])
+;=>[[]]
+(quasiquote [()])
+;=>[()]
+(quasiquote ([]))
+;=>([])
+(def! a 8)
+;=>8
+`[1 a 3]
+;=>[1 a 3]
+(quasiquote [a [] b [c] d [e f] g])
+;=>[a [] b [c] d [e f] g]
+`[~a]
+;=>[8]
+`[(~a)]
+;=>[(8)]
+`([~a])
+;=>([8])
+`[a ~a a]
+;=>[a 8 a]
+`([a ~a a])
+;=>([a 8 a])
+`[(a ~a a)]
+;=>[(a 8 a)]
+(def! c '(1 "b" "d"))
+;=>(1 "b" "d")
+`[~@c]
+;=>[1 "b" "d"]
+`[(~@c)]
+;=>[(1 "b" "d")]
+`([~@c])
+;=>([1 "b" "d"])
+`[1 ~@c 3]
+;=>[1 1 "b" "d" 3]
+`([1 ~@c 3])
+;=>([1 1 "b" "d" 3])
+`[(1 ~@c 3)]
+;=>[(1 1 "b" "d" 3)]
+(vector? `[1])
+;=>true
+(list? `(1))
+;=>true
+
+;; Testing quasiquoteexpand
+(quasiquoteexpand nil)
+;=>nil
+(quasiquoteexpand 7)
+;=>7
+(quasiquoteexpand a)
+;=>(quote a)
+(quasiquoteexpand {"a" b})
+;=>(quote {"a" b})
+(quasiquoteexpand ())
+;=>()
+(quasiquoteexpand (1 2))
+;=>(cons 1 (cons 2 ()))
+(quasiquoteexpand (a b))
+;=>(cons (quote a) (cons (quote b) ()))
+(quasiquoteexpand (1 ~a 3))
+;=>(cons 1 (cons a (cons 3 ())))
+(quasiquoteexpand (1 ~@c 3))
+;=>(cons 1 (concat c (cons 3 ())))
+(quasiquoteexpand [])
+;=>(vec ())
+(quasiquoteexpand [a ~b])
+;=>(vec (cons (quote a) (cons b ())))
+(quasiquoteexpand ~x)
+;=>x
+(quasiquoteexpand `(1 ~~x))
+;=>(cons (quote quasiquote) (cons (cons 1 (cons (unquote x) ())) ()))
+
+;; Testing nested quasiquote
+`(1 `x)
+;=>(1 (quasiquote x))
+
+;; Testing unquote in the head position and a few error cases
+(quasiquote (unquote))
+;/.*Error.*
+(quasiquote (1 (splice-unquote)))
+;/.*Error.*
+(quote)
+;/.*Error.*
+(+ 1 2)
+;=>3
+
+;; Testing nth, first, rest
+(nth (list 1) 0)
+;=>1
+(nth (list 1 2) 1)
+;=>2
+(nth (list 1 2 nil) 2)
+;=>nil
+(nth [1 2 3] 1)
+;=>2
+(nth (list 1) 1)
+;/.*(index out of range|out of range).*
+(nth (list 1) -1)
+;/.*out of range.*
+(first (list))
+;=>nil
+(first (list 6))
+;=>6
+(first (list 7 8 9))
+;=>7
+(first nil)
+;=>nil
+(first [])
+;=>nil
+(first [10 11])
+;=>10
+(rest (list))
+;=>()
+(rest (list 6))
+;=>()
+(rest (list 7 8 9))
+;=>(8 9)
+(rest nil)
+;=>()
+(rest [])
+;=>()
+(rest [10 11 12])
+;=>(11 12)

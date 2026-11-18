@@ -1,0 +1,3 @@
+(def! incB-loaded true)
+(def! argv-in-file *ARGV*)
+;; trailing comment without newline handled by load-file

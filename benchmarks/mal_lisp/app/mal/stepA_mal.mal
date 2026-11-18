@@ -1,0 +1,376 @@
+;; stepA_mal in mal: a mal interpreter written in mal, hosted by the Go
+;; interpreter. Written from docs/step*.txt and docs/guide.md.
+;;
+;; Representation of inner (guest) values:
+;;   * nil/booleans/numbers/strings/symbols/keywords/lists/vectors/hash-maps
+;;     and atoms are the host's own values;
+;;   * guest functions and macros are host closures whose host metadata is a
+;;     "function record" {"__malfn__" true "ast" .. "params" .. "env" .. "macro" b "meta" m}
+;;     (this is what the TCO loop and macros need);
+;;   * guest environments are vectors [atom-of-hash-map outer-env-or-nil].
+;; All guest tail calls are host tail calls, so the host's TCO makes the
+;; guest's TCO work.
+
+;; ---------------------------------------------------------------- helpers
+(def! join* (fn* (sep xs acc)
+  (if (empty? xs) acc (join* sep (rest xs) (str acc sep (first xs))))))
+(def! join (fn* (sep xs)
+  (if (empty? xs) "" (join* sep (rest xs) (first xs)))))
+
+(def! fn-rec (fn* (f)
+  (if (fn? f)
+    (let* (m (meta f))
+      (if (map? m) (if (contains? m "__malfn__") m nil) nil))
+    nil)))
+(def! macro-rec? (fn* (f)
+  (let* (r (fn-rec f)) (if r (get r "macro") false))))
+
+;; ------------------------------------------------------------ environments
+;; debug-seen: becomes true once any binding named DEBUG-EVAL has been made,
+;; so EVAL only pays for the DEBUG-EVAL lookup when it can possibly be set.
+(def! debug-seen (atom false))
+(def! env-set (fn* (e k v)
+  (let* (name (str k))
+    (do (if (= name "DEBUG-EVAL") (reset! debug-seen true) nil)
+        (swap! (nth e 0) assoc name v)
+        v))))
+(def! env-find (fn* (e k)
+  (if (contains? @(nth e 0) k)
+    e
+    (if (nth e 1) (env-find (nth e 1) k) nil))))
+(def! env-get (fn* (e k)
+  (let* (name (str k) found (env-find e name))
+    (if found
+      (get @(nth found 0) name)
+      (throw (str "'" name "' not found"))))))
+(def! bind-env (fn* (e binds exprs)
+  (if (empty? binds)
+    e
+    (if (= (str (first binds)) "&")
+      (do (env-set e (nth binds 1) (apply list exprs)) e)
+      (do (env-set e (first binds) (first exprs))
+          (bind-env e (rest binds) (rest exprs)))))))
+(def! new-env (fn* (outer binds exprs)
+  (bind-env [(atom {}) outer] binds exprs)))
+
+;; ------------------------------------------------------------------ printer
+(def! pr-map (fn* (m r)
+  (apply concat (map (fn* (k) (list (pr-str* k r) (pr-str* (get m k) r))) (keys m)))))
+(def! pr-str* (fn* (x r)
+  (cond
+    (list? x)   (str "(" (join " " (map (fn* (e) (pr-str* e r)) x)) ")")
+    (vector? x) (str "[" (join " " (map (fn* (e) (pr-str* e r)) x)) "]")
+    (map? x)    (str "{" (join " " (pr-map x r)) "}")
+    (atom? x)   (str "(atom " (pr-str* @x r) ")")
+    (macro-rec? x) "#<macro>"
+    r           (pr-str x)
+    true        (str x))))
+
+;; ------------------------------------------------------------------- reader
+(def! WS (hash-map " " true "\n" true "	" true "
+" true "," true))  ;; literal TAB and CR characters inside the strings (the host reader has no \t / \r escapes)
+(def! SPECIAL (hash-map "[" true "]" true "{" true "}" true "(" true ")" true
+                        "'" true "`" true "~" true "^" true "@" true))
+(def! DELIM (hash-map " " true "\n" true "	" true "
+" true "," true
+                      "[" true "]" true "{" true "}" true "(" true ")" true
+                      "'" true "\"" true "`" true ";" true))
+(def! DIGITS (hash-map "0" 0 "1" 1 "2" 2 "3" 3 "4" 4 "5" 5 "6" 6 "7" 7 "8" 8 "9" 9))
+(def! BLANK (atom nil))
+
+(def! skip-comment (fn* (chars i n)
+  (if (>= i n) i (if (= (nth chars i) "\n") i (skip-comment chars (+ i 1) n)))))
+(def! skip-ws (fn* (chars i n)
+  (if (>= i n)
+    i
+    (let* (c (nth chars i))
+      (cond (contains? WS c) (skip-ws chars (+ i 1) n)
+            (= c ";")        (skip-ws chars (skip-comment chars i n) n)
+            true             i)))))
+
+;; scan-str: i is just after the opening quote; returns [decoded-string next-i]
+(def! scan-str (fn* (chars i n acc)
+  (if (>= i n)
+    (throw "unbalanced string: expected '\"', got EOF")
+    (let* (c (nth chars i))
+      (cond (= c "\"") [acc (+ i 1)]
+            (= c "\\")
+              (if (>= (+ i 1) n)
+                (throw "unbalanced string: expected '\"', got EOF")
+                (let* (d (nth chars (+ i 1)))
+                  (scan-str chars (+ i 2) n (str acc (if (= d "n") "\n" d)))))
+            true (scan-str chars (+ i 1) n (str acc c)))))))
+(def! scan-sym (fn* (chars i n acc)
+  (if (>= i n)
+    [acc i]
+    (let* (c (nth chars i))
+      (if (contains? DELIM c) [acc i] (scan-sym chars (+ i 1) n (str acc c)))))))
+
+;; reader state: [chars position-atom]. scan returns the next token or nil at
+;; the end of input. String literals come back as the vector [decoded-string].
+(def! scan (fn* (rd)
+  (let* (chars (nth rd 0) pos (nth rd 1) n (count chars)
+         i (skip-ws chars @pos n))
+    (if (>= i n)
+      (do (reset! pos i) nil)
+      (let* (c (nth chars i))
+        (cond
+          (if (= c "~") (if (< (+ i 1) n) (= (nth chars (+ i 1)) "@") false) false)
+            (do (reset! pos (+ i 2)) "~@")
+          (contains? SPECIAL c) (do (reset! pos (+ i 1)) c)
+          (= c "\"")
+            (let* (r (scan-str chars (+ i 1) n ""))
+              (do (reset! pos (nth r 1)) [(nth r 0)]))
+          true
+            (let* (r (scan-sym chars i n ""))
+              (do (reset! pos (nth r 1)) (nth r 0)))))))))
+(def! peek-token (fn* (rd)
+  (let* (save @(nth rd 1) t (scan rd))
+    (do (reset! (nth rd 1) save) t))))
+
+(def! parse-int (fn* (chars acc)
+  (if (empty? chars) acc (parse-int (rest chars) (+ (* acc 10) (get DIGITS (first chars)))))))
+(def! all-digits? (fn* (chars)
+  (if (empty? chars) true (if (contains? DIGITS (first chars)) (all-digits? (rest chars)) false))))
+(def! read-atom (fn* (tok)
+  (let* (chars (seq tok))
+    (cond
+      (= tok "nil") nil
+      (= tok "true") true
+      (= tok "false") false
+      (= (first chars) ":") (keyword (apply str (rest chars)))
+      (all-digits? chars) (parse-int chars 0)
+      (if (= (first chars) "-") (if (> (count chars) 1) (all-digits? (rest chars)) false) false)
+        (- 0 (parse-int (rest chars) 0))
+      true (symbol tok)))))
+
+(def! read-seq (fn* (rd end acc)
+  (let* (t (peek-token rd))
+    (cond (nil? t) (throw (str "unbalanced input: expected '" end "', got EOF"))
+          (= t end) (do (scan rd) acc)
+          true (read-seq rd end (conj acc (read-form rd)))))))
+(def! read-wrap (fn* (rd name) (list (symbol name) (read-form rd))))
+(def! read-form (fn* (rd)
+  (let* (tok (scan rd))
+    (cond
+      (nil? tok)    (throw "unbalanced input: unexpected end of input (EOF)")
+      (vector? tok) (nth tok 0)
+      (= tok "(")   (apply list (read-seq rd ")" []))
+      (= tok "[")   (read-seq rd "]" [])
+      (= tok "{")   (apply hash-map (read-seq rd "}" []))
+      (contains? (hash-map ")" 1 "]" 1 "}" 1) tok)
+                    (throw (str "unbalanced input: unexpected '" tok "'"))
+      (= tok "'")   (read-wrap rd "quote")
+      (= tok "`")   (read-wrap rd "quasiquote")
+      (= tok "~")   (read-wrap rd "unquote")
+      (= tok "~@")  (read-wrap rd "splice-unquote")
+      (= tok "@")   (read-wrap rd "deref")
+      (= tok "^")   (let* (m (read-form rd) f (read-form rd)) (list 'with-meta f m))
+      true          (read-atom tok)))))
+(def! read-str (fn* (s)
+  (let* (cs (seq s)
+         rd [(if cs (vec cs) []) (atom 0)])
+    (if (nil? (peek-token rd)) BLANK (read-form rd)))))
+
+;; ---------------------------------------------------------------- quasiquote
+(def! qq-iter (fn* (elts)
+  (if (empty? elts)
+    (list)
+    (let* (elt (first elts) res (qq-iter (rest elts)))
+      (if (if (list? elt) (= (first elt) 'splice-unquote) false)
+        (list 'concat (nth elt 1) res)
+        (list 'cons (quasiquote* elt) res))))))
+(def! quasiquote* (fn* (ast)
+  (cond
+    (list? ast)   (if (= (first ast) 'unquote) (nth ast 1) (qq-iter ast))
+    (vector? ast) (list 'vec (qq-iter ast))
+    (map? ast)    (list 'quote ast)
+    (symbol? ast) (list 'quote ast)
+    true          ast)))
+
+;; ------------------------------------------------------------------- macros
+(def! macro-fn-of (fn* (ast env)
+  (if (list? ast)
+    (if (empty? ast)
+      nil
+      (if (symbol? (first ast))
+        (let* (name (str (first ast)) e (env-find env name))
+          (if e
+            (let* (f (get @(nth e 0) name)) (if (macro-rec? f) f nil))
+            nil))
+        nil))
+    nil)))
+(def! macroexpand* (fn* (ast env)
+  (let* (f (macro-fn-of ast env))
+    (if f (macroexpand* (apply f (rest ast)) env) ast))))
+
+;; --------------------------------------------------------------------- eval
+(def! debug-eval (fn* (ast env)
+  (if @debug-seen
+    (let* (e (env-find env "DEBUG-EVAL"))
+      (if e
+        (if (get @(nth e 0) "DEBUG-EVAL") (println (str "EVAL: " (pr-str* ast true))) nil)
+        nil))
+    nil)))
+(def! all-symbols? (fn* (xs)
+  (if (empty? xs) true (if (symbol? (first xs)) (all-symbols? (rest xs)) false))))
+(def! make-fn (fn* (params body env)
+  (if (if (sequential? params) (all-symbols? params) false)
+    (with-meta (fn* (& args) (EVAL body (new-env env params args)))
+               {"__malfn__" true "ast" body "params" params "env" env "macro" false "meta" nil})
+    (throw "fn*: parameters must be a list or vector of symbols"))))
+(def! let-bind (fn* (env binds)
+  (if (empty? binds)
+    env
+    (if (symbol? (first binds))
+      (do (env-set env (first binds) (EVAL (nth binds 1) env))
+          (let-bind env (rest (rest binds))))
+      (throw "let*: binding name must be a symbol")))))
+(def! eval-do (fn* (forms env)
+  (if (empty? forms)
+    nil
+    (if (= (count forms) 1)
+      (EVAL (first forms) env)
+      (do (EVAL (first forms) env) (eval-do (rest forms) env))))))
+(def! eval-map (fn* (m ks env acc)
+  (if (empty? ks)
+    acc
+    (eval-map m (rest ks) env (assoc acc (first ks) (EVAL (get m (first ks)) env))))))
+(def! catch-clause? (fn* (c)
+  (if (list? c)
+    (if (= (count c) 3)
+      (if (= (first c) 'catch*) (symbol? (nth c 1)) false)
+      false)
+    false)))
+(def! eval-try (fn* (ast env)
+  (if (< (count ast) 3)
+    (EVAL (nth ast 1) env)
+    (let* (c (nth ast 2))
+      (if (catch-clause? c)
+        (let* (r (try* [true (EVAL (nth ast 1) env)] (catch* e [false e])))
+          (if (nth r 0)
+            (nth r 1)
+            (EVAL (nth c 2) (new-env env [(nth c 1)] [(nth r 1)]))))
+        (throw "try*: expected (catch* name body)"))))))
+
+;; Special forms are dispatched through a table of handlers (ast env) -> value.
+;; (Plain nested `if`s are used on the hot path on purpose: `cond` is a macro
+;; that would be re-expanded on every evaluation.)
+(def! sf-def (fn* (ast env)
+  (if (symbol? (nth ast 1))
+    (env-set env (nth ast 1) (EVAL (nth ast 2) env))
+    (throw "def!: first argument must be a symbol"))))
+(def! sf-let (fn* (ast env)
+  (EVAL (nth ast 2) (let-bind (new-env env [] []) (nth ast 1)))))
+(def! sf-defmacro (fn* (ast env)
+  (let* (f (EVAL (nth ast 2) env) r (fn-rec f))
+    (if r
+      (if (symbol? (nth ast 1))
+        (env-set env (nth ast 1) (with-meta f (assoc r "macro" true)))
+        (throw "defmacro!: first argument must be a symbol"))
+      (throw "defmacro!: value must be a function")))))
+(def! sf-if (fn* (ast env)
+  (let* (c (EVAL (nth ast 1) env))
+    (if c
+      (EVAL (nth ast 2) env)
+      (if (> (count ast) 3) (EVAL (nth ast 3) env) nil)))))
+(def! SPECIALS (hash-map
+  "def!" sf-def
+  "let*" sf-let
+  "quote" (fn* (ast env) (nth ast 1))
+  "quasiquoteexpand" (fn* (ast env) (quasiquote* (nth ast 1)))
+  "quasiquote" (fn* (ast env) (EVAL (quasiquote* (nth ast 1)) env))
+  "defmacro!" sf-defmacro
+  "macroexpand" (fn* (ast env) (macroexpand* (nth ast 1) env))
+  "try*" eval-try
+  "do" (fn* (ast env) (eval-do (rest ast) env))
+  "if" sf-if
+  "fn*" (fn* (ast env) (make-fn (nth ast 1) (nth ast 2) env))))
+
+(def! apply-form (fn* (ast env)
+  (let* (f (EVAL (first ast) env))
+    (if (macro-rec? f)
+      (EVAL (apply f (rest ast)) env)
+      (let* (args (map (fn* (x) (EVAL x env)) (rest ast)) r (fn-rec f))
+        (if r
+          (EVAL (get r "ast") (new-env (get r "env") (get r "params") args))
+          (apply f args)))))))
+(def! EVAL-LIST (fn* (ast env)
+  (let* (a0 (first ast)
+         h (if (symbol? a0) (get SPECIALS (str a0)) nil))
+    (if h (h ast env) (apply-form ast env)))))
+(def! EVAL (fn* (ast env)
+  (do (if @debug-seen (debug-eval ast env) nil)
+      (if (symbol? ast)
+        (env-get env ast)
+        (if (list? ast)
+          (if (empty? ast) ast (EVAL-LIST ast env))
+          (if (vector? ast)
+            (apply vector (map (fn* (x) (EVAL x env)) ast))
+            (if (map? ast)
+              (eval-map ast (keys ast) env {})
+              ast)))))))
+
+;; ------------------------------------------------------------------- driver
+(def! READ (fn* (s) (read-str s)))
+(def! PRINT (fn* (x) (pr-str* x true)))
+(def! repl-env (new-env nil [] []))
+(def! rep (fn* (s)
+  (let* (ast (READ s))
+    (if (= ast BLANK) nil (PRINT (EVAL ast repl-env))))))
+
+(def! strs (fn* (xs r) (join " " (map (fn* (x) (pr-str* x r)) xs))))
+(def! fn-meta (fn* (f)
+  (let* (r (fn-rec f)) (if r (get r "meta") (meta f)))))
+
+(def! core-ns (hash-map
+  "+" + "-" - "*" * "/" / "<" < "<=" <= ">" > ">=" >= "=" =
+  "list" list "list?" list? "vector" vector "vector?" vector?
+  "hash-map" hash-map "map?" map? "assoc" assoc "dissoc" dissoc "get" get
+  "contains?" contains? "keys" keys "vals" vals "sequential?" sequential?
+  "cons" cons "concat" concat "vec" vec "nth" nth "first" first "rest" rest
+  "empty?" empty? "count" count "apply" apply "map" map "throw" throw
+  "nil?" nil? "true?" true? "false?" false? "symbol" symbol "symbol?" symbol?
+  "keyword" keyword "keyword?" keyword? "atom" atom "atom?" atom? "deref" deref
+  "reset!" reset! "swap!" swap! "readline" readline "time-ms" time-ms
+  "string?" string? "number?" number? "seq" seq "conj" conj "slurp" slurp
+  "pr-str" (fn* (& xs) (strs xs true))
+  "str" (fn* (& xs) (apply str (map (fn* (x) (pr-str* x false)) xs)))
+  "prn" (fn* (& xs) (do (println (strs xs true)) nil))
+  "println" (fn* (& xs) (do (println (strs xs false)) nil))
+  "read-string" (fn* (s) (let* (r (read-str s)) (if (= r BLANK) nil r)))
+  "eval" (fn* (ast) (EVAL ast repl-env))
+  "fn?" (fn* (x) (if (fn? x) (not (macro-rec? x)) false))
+  "macro?" (fn* (x) (macro-rec? x))
+  "meta" (fn* (& a)
+    (if (= (count a) 1)
+      (let* (x (first a)) (if (fn? x) (fn-meta x) (meta x)))
+      (throw "meta: expected 1 argument")))
+  "with-meta" (fn* (& a)
+    (if (= (count a) 2)
+      (let* (x (first a) m (nth a 1))
+        (if (fn? x)
+          (let* (r (fn-rec x)) (if r (with-meta x (assoc r "meta" m)) (with-meta x m)))
+          (with-meta x m)))
+      (throw "with-meta: expected 2 arguments")))))
+(map (fn* (k) (env-set repl-env k (get core-ns k))) (keys core-ns))
+
+(env-set repl-env "*ARGV*" (rest *ARGV*))
+(env-set repl-env "*host-language*" *host-language*)
+(rep "(def! not (fn* (a) (if a false true)))")
+(rep "(def! load-file (fn* (f) (eval (read-string (str \"(do \" (slurp f) \"\nnil)\")))))")
+(rep "(defmacro! cond (fn* (& xs) (if (> (count xs) 0) (list 'if (first xs) (if (> (count xs) 1) (nth xs 1) (throw \"odd number of forms to cond\")) (cons 'cond (rest (rest xs)))))))")
+
+(def! err-text (fn* (e) (if (string? e) e (pr-str* e true))))
+(def! repl-loop (fn* ()
+  (let* (line (readline "user> "))
+    (if line
+      (do (try* (let* (out (rep line)) (if out (println out) nil))
+                (catch* e (println (str "Error: " (err-text e)))))
+          (repl-loop))
+      nil))))
+
+(if (> (count *ARGV*) 0)
+  (rep (str "(load-file " (pr-str (first *ARGV*)) ")"))
+  (do (rep "(println (str \"Mal [\" *host-language* \"]\"))")
+      (repl-loop)))

@@ -1,0 +1,137 @@
+;; Testing non-macro function
+(not (= 1 1))
+;=>false
+(not (= 1 2))
+;=>true
+
+;; Testing trivial macros
+(defmacro! one (fn* () 1))
+;=>#<macro>
+(one)
+;=>1
+(defmacro! two (fn* () 2))
+;=>#<macro>
+(two)
+;=>2
+
+;; Testing unless macros
+(defmacro! unless (fn* (pred a b) `(if ~pred ~b ~a)))
+;=>#<macro>
+(unless false 7 8)
+;=>7
+(unless true 7 8)
+;=>8
+(defmacro! unless2 (fn* (pred a b) `(if (not ~pred) ~a ~b)))
+;=>#<macro>
+(unless2 false 7 8)
+;=>7
+(unless2 true 7 8)
+;=>8
+
+;; Testing macroexpand
+(macroexpand (unless2 2 3 4))
+;=>(if (not 2) 3 4)
+(macroexpand (one))
+;=>1
+(macroexpand 5)
+;=>5
+(macroexpand (list 1 2))
+;=>(list 1 2)
+(macroexpand (quote (unless2 2 3 4)))
+;=>(quote (unless2 2 3 4))
+(macroexpand (unless2 (quote a) 3 4))
+;=>(if (not (quote a)) 3 4)
+
+;; Testing evaluation of macro result
+(defmacro! identity (fn* (x) x))
+;=>#<macro>
+(let* (a 123) (identity a))
+;=>123
+
+;; Testing non-macro function
+(macro? unless)
+;=>true
+(macro? +)
+;=>false
+(macro? (fn* (a) a))
+;=>false
+(fn? unless)
+;=>false
+(fn? +)
+;=>true
+(fn? (fn* (a) a))
+;=>true
+
+;; Testing nth, first, rest again with vectors
+(nth [1 2 3] 2)
+;=>3
+(first (rest [1 2 3]))
+;=>2
+
+;; Testing cond macro
+(cond)
+;=>nil
+(cond true 7)
+;=>7
+(cond true 7 true 8)
+;=>7
+(cond false 7)
+;=>nil
+(cond false 7 true 8)
+;=>8
+(cond false 7 false 8 "else" 9)
+;=>9
+(cond false 7 (= 2 2) 8 "else" 9)
+;=>8
+(cond false 7 false 8 false 9)
+;=>nil
+(cond true)
+;/.*Error.*
+
+;; Testing EVAL in let*
+(let* (x (cond false "no" true "yes")) x)
+;=>"yes"
+
+;; Testing macros that use quasiquote, recursion and splice
+(defmacro! my-or (fn* (& xs) (if (empty? xs) nil (if (= 1 (count xs)) (first xs) `(let* (or_FIXME ~(first xs)) (if or_FIXME or_FIXME (my-or ~@(rest xs))))))))
+;=>#<macro>
+(my-or)
+;=>nil
+(my-or 1)
+;=>1
+(my-or 1 2 3 4)
+;=>1
+(my-or false 2)
+;=>2
+(my-or false nil 3)
+;=>3
+(def! x 5)
+;=>5
+(defmacro! incr (fn* (s) `(def! ~s (+ ~s 1))))
+;=>#<macro>
+(incr x)
+;=>6
+x
+;=>6
+
+;; Macro with rest args and TCO through a macro
+(defmacro! my-do (fn* (& xs) `(do ~@xs)))
+;=>#<macro>
+(my-do 1 2 3)
+;=>3
+(def! loop-down (fn* (n) (cond (= n 0) :done true (loop-down (- n 1)))))
+;=>#<function>
+(loop-down 100000)
+;=>:done
+
+;; Redefining a macro as plain function via def!
+(def! one 5)
+;=>5
+(+ one 1)
+;=>6
+
+;; defmacro! of a non-function is an error
+(defmacro! bad 3)
+;/.*Error.*
+(defmacro! 3 (fn* () 1))
+;/.*Error.*

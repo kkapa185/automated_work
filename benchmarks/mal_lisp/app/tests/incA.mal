@@ -1,0 +1,5 @@
+;; fixture for load-file tests
+(def! inc4 (fn* (a) (+ 4 a)))
+(def! inc5 (fn* (a) (+ 5 a)))
+(prn "incA.mal finished")
+"incA.mal return value"

@@ -1,0 +1,215 @@
+;; Testing *host-language*
+*host-language*
+;=>"Go"
+(string? *host-language*)
+;=>true
+
+;; Testing metadata on functions
+(meta (fn* (a) a))
+;=>nil
+(meta (with-meta (fn* (a) a) {"b" 1}))
+;=>{"b" 1}
+(meta (with-meta (fn* (a) a) "abc"))
+;=>"abc"
+(def! l-wm (with-meta (fn* (a) (+ 1 a)) {"b" 2}))
+;=>#<function>
+(meta l-wm)
+;=>{"b" 2}
+(l-wm 5)
+;=>6
+(meta (with-meta l-wm {"new_meta" 123}))
+;=>{"new_meta" 123}
+(meta l-wm)
+;=>{"b" 2}
+(def! f-wm (with-meta (fn* [a] (+ 1 a)) {"abc" 1}))
+;=>#<function>
+(meta f-wm)
+;=>{"abc" 1}
+(meta +)
+;=>nil
+(def! f-wm2 ^{"abc" 1} (fn* [a] (+ 1 a)))
+;=>#<function>
+(meta f-wm2)
+;=>{"abc" 1}
+(meta (with-meta + {"x" 1}))
+;=>{"x" 1}
+((with-meta + {"x" 1}) 1 2)
+;=>3
+
+;; Testing metadata on closures and macros keeps env and macro flag
+(def! mk (fn* (n) (with-meta (fn* (m) (+ n m)) {"n" n})))
+;=>#<function>
+((mk 10) 5)
+;=>15
+(meta (mk 10))
+;=>{"n" 10}
+(defmacro! mm (fn* () 42))
+;=>#<macro>
+(macro? (with-meta mm {"a" 1}))
+;=>true
+(meta (with-meta mm {"a" 1}))
+;=>{"a" 1}
+
+;; Testing metadata on collections
+(meta [1 2 3])
+;=>nil
+(with-meta [1 2 3] {"a" 1})
+;=>[1 2 3]
+(meta (with-meta [1 2 3] {"a" 1}))
+;=>{"a" 1}
+(vector? (with-meta [1 2 3] {"a" 1}))
+;=>true
+(meta (with-meta [1 2 3] "abc"))
+;=>"abc"
+(meta (with-meta (list 1 2 3) {"a" 1}))
+;=>{"a" 1}
+(list? (with-meta (list 1 2 3) {"a" 1}))
+;=>true
+(meta (with-meta {"abc" 123} {"a" 1}))
+;=>{"a" 1}
+(map? (with-meta {"abc" 123} {"a" 1}))
+;=>true
+(def! l-wm (with-meta [4 5 6] {"b" 2}))
+;=>[4 5 6]
+(meta l-wm)
+;=>{"b" 2}
+(meta (with-meta l-wm {"new_meta" 123}))
+;=>{"new_meta" 123}
+(meta l-wm)
+;=>{"b" 2}
+(= (with-meta [1 2] {"a" 1}) [1 2])
+;=>true
+(meta ^{"x" 1} [1 2])
+;=>{"x" 1}
+(meta ^:k (list 1))
+;=>:k
+(meta ^{"a" 1} {"b" 2})
+;=>{"a" 1}
+(count (keys (with-meta {"a" 1 "b" 2} {"m" 1})))
+;=>2
+
+;; with-meta does not alter the original and assoc keeps working
+(def! hm (with-meta {"a" 1} {"m" 1}))
+;=>{"a" 1}
+(assoc hm "b" 2)
+;=>{"a" 1 "b" 2}
+(meta hm)
+;=>{"m" 1}
+(with-meta 1 {})
+;/.*Error.*
+
+;; Testing atom/deref/swap! with metadata functions
+(def! inc-it (with-meta (fn* (a) (+ 1 a)) {"x" 1}))
+;=>#<function>
+(def! at (atom 7))
+;=>(atom 7)
+(swap! at inc-it)
+;=>8
+
+;; Testing conj function
+(conj (list) 1)
+;=>(1)
+(conj (list 1) 2)
+;=>(2 1)
+(conj (list 2 3) 4)
+;=>(4 2 3)
+(conj (list 2 3) 4 5 6)
+;=>(6 5 4 2 3)
+(conj (list 1) (list 2 3))
+;=>((2 3) 1)
+(conj [] 1)
+;=>[1]
+(conj [1] 2)
+;=>[1 2]
+(conj [2 3] 4)
+;=>[2 3 4]
+(conj [2 3] 4 5 6)
+;=>[2 3 4 5 6]
+(conj [1] [2 3])
+;=>[1 [2 3]]
+(conj 5 1)
+;/.*Error.*
+
+;; Testing seq function
+(seq "abc")
+;=>("a" "b" "c")
+(apply str (seq "this is a test"))
+;=>"this is a test"
+(seq '(2 3 4))
+;=>(2 3 4)
+(seq [2 3 4])
+;=>(2 3 4)
+(seq "")
+;=>nil
+(seq '())
+;=>nil
+(seq [])
+;=>nil
+(seq nil)
+;=>nil
+(seq 3)
+;/.*Error.*
+(seq "é")
+;=>("é")
+
+;; Testing time-ms
+(def! start-time (time-ms))
+;/.*
+(number? start-time)
+;=>true
+(> start-time 1000000000000)
+;=>true
+(>= (- (time-ms) start-time) 0)
+;=>true
+
+;; Testing fn? string? number? macro?
+(fn? (fn* (a) a))
+;=>true
+(fn? car)
+;/.*'car' not found.*
+(fn? cond)
+;=>false
+(fn? "a")
+;=>false
+(fn? :+)
+;=>false
+(string? "")
+;=>true
+(string? 'abc)
+;=>false
+(string? "abc")
+;=>true
+(string? :abc)
+;=>false
+(string? (keyword "abc"))
+;=>false
+(string? 234)
+;=>false
+(string? nil)
+;=>false
+(number? 123)
+;=>true
+(number? -1)
+;=>true
+(number? nil)
+;=>false
+(number? false)
+;=>false
+(number? "123")
+;=>false
+(macro? cond)
+;=>true
+(macro? nil)
+;=>false
+
+;; Testing DEBUG-EVAL variable absent by default and symbols
+(def! DEBUG-EVAL nil)
+;=>nil
+(+ 1 2)
+;=>3
+
+;; Testing time-ms/with-meta arity errors
+(meta)
+;/.*Error.*
+(with-meta [1])
+;/.*Error.*

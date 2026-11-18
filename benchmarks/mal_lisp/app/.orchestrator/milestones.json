@@ -1,0 +1,6 @@
+{"milestones":[
+{"id":"M1","title":"Skeleton, test harness, steps 0-3","goal":"Go module, shared types/reader/printer/env, run script, Makefile, test runner, step0-step3 binaries with tests.","criteria":["R1","R2","R3","R4","R5","R6","R14","R17"]},
+{"id":"M2","title":"Steps 4-6: functions, TCO, files","goal":"Core ns, fn*/if/do, TCO, atoms, slurp/eval/load-file, ARGV; tests and deep-recursion.","criteria":["R7","R8","R9","R15","R18"]},
+{"id":"M3","title":"Steps 7-A: quasiquote, macros, exceptions, metadata","goal":"quasiquote, defmacro!, try*/catch*, hash-map/sequence/meta core, stepA banner.","criteria":["R10","R11","R12","R13","R19"]},
+{"id":"M4","title":"Self-hosting, README, hardening","goal":"mal-in-mal stepA running on the interpreter, self-host test mode, CLI tests, README.","criteria":["R16","R20"]}
+]}

@@ -1,0 +1,198 @@
+;; Testing read of numbers (guide examples)
+123
+;=>123
+   123  
+;=>123
+abc
+;=>abc
+   abc   
+;=>abc
+(123 456)
+;=>(123 456)
+(  123   456 789   )   
+;=>(123 456 789)
+(  + 2   (*  3  4)  )  
+;=>(+ 2 (* 3 4))
+
+;; Testing negative numbers and symbols
+-123
+;=>-123
+-
+;=>-
+->>
+;=>->>
+(- 1 2)
+;=>(- 1 2)
+abc-def
+;=>abc-def
+*ABC*
+;=>*ABC*
+a?
+;=>a?
+
+;; Testing commas as whitespace
+(1 2, 3,,,,),,
+;=>(1 2 3)
+
+;; Testing empty list and nesting
+()
+;=>()
+(())
+;=>(())
+(()())
+;=>(() ())
+( ( ) ( ) )
+;=>(() ())
+((3 4))
+;=>((3 4))
+(+ 1 (+ 2 3))
+;=>(+ 1 (+ 2 3))
+(+ 1 (+ 2 (+ 3 4)))
+;=>(+ 1 (+ 2 (+ 3 4)))
+
+;; Testing nil, true, false
+nil
+;=>nil
+true
+;=>true
+false
+;=>false
+(nil true false)
+;=>(nil true false)
+nilx
+;=>nilx
+
+;; Testing strings
+"abc"
+;=>"abc"
+   "abc"   
+;=>"abc"
+"abc (with parens)"
+;=>"abc (with parens)"
+"abc\"def"
+;=>"abc\"def"
+"abc\ndef"
+;=>"abc\ndef"
+"abc\\def"
+;=>"abc\\def"
+""
+;=>""
+"\\"
+;=>"\\"
+"\\\\\\\\\\\\\\\\\\"
+;=>"\\\\\\\\\\\\\\\\\\"
+"&"
+;=>"&"
+"'"
+;=>"'"
+"("
+;=>"("
+"*"
+;=>"*"
+"]"
+;=>"]"
+"["
+;=>"["
+"{"
+;=>"{"
+";"
+;=>";"
+"a;b"
+;=>"a;b"
+
+;; Testing unbalanced input is an error and the REPL continues
+(1 2
+;/.*(EOF|end of input|unbalanced).*
+[1 2
+;/.*(EOF|end of input|unbalanced).*
+{"a" 1
+;/.*(EOF|end of input|unbalanced).*
+"abc
+;/.*(EOF|end of input|unbalanced).*
+"abc\"
+;/.*(EOF|end of input|unbalanced).*
+(1 2))
+;=>(1 2)
+)
+;/.*(EOF|end of input|unbalanced).*
+(1 2 ]
+;/.*(EOF|end of input|unbalanced).*
+(1 2)
+;=>(1 2)
+
+;; Testing keywords
+:kw
+;=>:kw
+(:kw1 :kw2 :kw3)
+;=>(:kw1 :kw2 :kw3)
+
+;; Testing vectors
+[+ 1 (+ 2 3)]
+;=>[+ 1 (+ 2 3)]
+  [ +   1 (+ 2 3   )   ]  
+;=>[+ 1 (+ 2 3)]
+([])
+;=>([])
+[]
+;=>[]
+
+;; Testing hash maps
+{}
+;=>{}
+{ }
+;=>{}
+{"abc" 1}
+;=>{"abc" 1}
+{"a" {"b" 2}}
+;=>{"a" {"b" 2}}
+{"a" {"b" {"c" 3}}}
+;=>{"a" {"b" {"c" 3}}}
+{  "a"  {"b"   {  "cde"     3   }  }}
+;=>{"a" {"b" {"cde" 3}}}
+{:a 1}
+;=>{:a 1}
+{"a" 1 :a 2}
+;=>{"a" 1 :a 2}
+{"a" 1 "a" 2}
+;=>{"a" 2}
+{"a"}
+;/.*(even|odd|key|value).*
+
+;; Testing comments
+;; whole-line comment
+1 ; trailing comment
+;=>1
+(1 ; inside
+;/.*(EOF|end of input|unbalanced).*
+"a;b" ; c
+;=>"a;b"
+
+;; Testing reader macros
+'1
+;=>(quote 1)
+'(1 2 3)
+;=>(quote (1 2 3))
+`1
+;=>(quasiquote 1)
+`(1 2 3)
+;=>(quasiquote (1 2 3))
+~1
+;=>(unquote 1)
+~(1 2 3)
+;=>(unquote (1 2 3))
+`(1 ~a 3)
+;=>(quasiquote (1 (unquote a) 3))
+~@(1 2 3)
+;=>(splice-unquote (1 2 3))
+`(1 ~@a 3)
+;=>(quasiquote (1 (splice-unquote a) 3))
+@a
+;=>(deref a)
+@(f)
+;=>(deref (f))
+^{"a" 1} [1 2 3]
+;=>(with-meta [1 2 3] {"a" 1})
+^:k abc
+;=>(with-meta abc :k)
+'a 'b
+;=>(quote a)

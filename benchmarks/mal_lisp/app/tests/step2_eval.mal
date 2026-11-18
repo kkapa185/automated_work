@@ -1,0 +1,75 @@
+;; Testing evaluation of arithmetic operations (guide examples)
+(+ 2 3)
+;=>5
+(+ 2 (* 3 4))
+;=>14
+(+ 1 2)
+;=>3
+(- 5 3)
+;=>2
+(- 3 5)
+;=>-2
+(* 7 6)
+;=>42
+(/ 8 2)
+;=>4
+(/ 7 2)
+;=>3
+(/ (- (+ 5 (* 2 3)) 3) 4)
+;=>2
+(+ 21 21)
+;=>42
+(- 21 -21)
+;=>42
+
+;; Testing nested and unusual forms
+(+ 1 (+ 2 (+ 3 4)))
+;=>10
+(* 1000 1000)
+;=>1000000
+
+;; Testing empty list evaluates to itself
+()
+;=>()
+
+;; Testing evaluation within collection literals
+[1 2 (+ 1 2)]
+;=>[1 2 3]
+{"a" (+ 7 8)}
+;=>{"a" 15}
+{:a (+ 7 8)}
+;=>{:a 15}
+[]
+;=>[]
+{}
+;=>{}
+([1 2 (+ 1 2)])
+;/.*[Ee]rror.*
+
+;; Testing non-numeric atoms evaluate to themselves
+"abc"
+;=>"abc"
+:kw
+;=>:kw
+nil
+;=>nil
+true
+;=>true
+
+;; Testing errors are reported and the REPL continues
+(abc 1 2 3)
+;/.*'abc' not found.*
+(+ 1 2)
+;=>3
+abc
+;/.*'abc' not found.*
+(1 2 3)
+;/.*[Ee]rror.*
+(+ 1 "a")
+;/.*Error.*
+(/ 1 0)
+;/.*Error.*
+(+ 1)
+;/.*Error.*
+(+ 1 2)
+;=>3

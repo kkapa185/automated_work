@@ -1,0 +1,344 @@
+;; Testing try*/catch*
+(try* 123 (catch* e 456))
+;=>123
+(try* (abc 1 2) (catch* exc (prn "exc is:" exc)))
+;"exc is:" "'abc' not found"
+;=>nil
+(try* (throw "my exception") (catch* exc (do (prn "exc:" exc) 7)))
+;"exc:" "my exception"
+;=>7
+(try* (do (try* "t1" (catch* e "c1")) (throw "e1")) (catch* e "c2"))
+;=>"c2"
+(try* (try* (throw "e1") (catch* e (throw "e2"))) (catch* e "c2"))
+;=>"c2"
+(try* (throw (list 1 2 3)) (catch* exc (do (prn "err:" exc) 7)))
+;"err:" (1 2 3)
+;=>7
+(try* (throw {:a 1}) (catch* exc (get exc :a)))
+;=>1
+(try* (throw 42) (catch* exc (+ exc 1)))
+;=>43
+(try* (throw nil) (catch* exc exc))
+;=>nil
+(try* 5)
+;=>5
+(try* (+ 1 2) (catch* e 0))
+;=>3
+
+;; Native errors are catchable as strings
+(try* (/ 1 0) (catch* e (string? e)))
+;=>true
+(try* (nth (list 1) 5) (catch* e e))
+;=>"nth: index out of range"
+(try* (undefined-sym) (catch* e e))
+;=>"'undefined-sym' not found"
+
+;; Uncaught throw reports an error and the REPL continues
+(throw "err1")
+;/.*([Ee]rror|exception).*err1.*
+(throw (list 1 2))
+;/.*Error.*\(1 2\).*
+(throw {:k 1})
+;/.*Error.*\{:k 1\}.*
+(+ 1 2)
+;=>3
+
+;; Catch environment: exception symbol is local, outer env visible
+(def! outer-v 10)
+;=>10
+(try* (throw 5) (catch* ex (+ ex outer-v)))
+;=>15
+ex
+;/.*'ex' not found.*
+
+;; Malformed try*
+(try* 1 2)
+;/.*Error.*
+(try* 1 (catch* 2 3))
+;/.*Error.*
+
+;; Throw inside function through map
+(def! thrower (fn* (x) (if (= x 2) (throw "two") x)))
+;=>#<function>
+(try* (map thrower [1 2 3]) (catch* e e))
+;=>"two"
+
+;; Testing throw in TCO position
+(def! f (fn* (n) (if (= n 0) (throw "bottom") (f (- n 1)))))
+;=>#<function>
+(try* (f 100000) (catch* e e))
+;=>"bottom"
+
+;; Testing apply
+(apply + (list 2 3))
+;=>5
+(apply + 4 (list 5))
+;=>9
+(apply + 1 (list 2))
+;=>3
+(apply (fn* (a b c d) (+ (+ a b) (+ c d))) 1 2 (list 3 4))
+;=>10
+(apply list (list))
+;=>()
+(apply list 1 2 (list))
+;=>(1 2)
+(apply symbol? (list (quote two)))
+;=>true
+(apply (fn* (a b) (+ a b)) (list 2 3))
+;=>5
+(apply (fn* (a b) (+ a b)) 4 [5])
+;=>9
+(apply (fn* (& rest) (count rest)) 1 2 [3])
+;=>3
+(apply + 1)
+;/.*Error.*
+
+;; Testing map
+(def! nums (list 1 2 3))
+;=>(1 2 3)
+(def! double (fn* (a) (* 2 a)))
+;=>#<function>
+(double 3)
+;=>6
+(map double nums)
+;=>(2 4 6)
+(map (fn* (x) (symbol? x)) (list 1 (quote two) "three"))
+;=>(false true false)
+(map (fn* (x) (* x x)) [1 2 3])
+;=>(1 4 9)
+(map double (list))
+;=>()
+(= () (map str ()))
+;=>true
+
+;; Testing predicates
+(nil? nil)
+;=>true
+(nil? false)
+;=>false
+(nil? true)
+;=>false
+(nil? 1)
+;=>false
+(nil? (list))
+;=>false
+(true? true)
+;=>true
+(true? false)
+;=>false
+(true? true?)
+;=>false
+(true? 1)
+;=>false
+(false? false)
+;=>true
+(false? true)
+;=>false
+(false? nil)
+;=>false
+(symbol? 'abc)
+;=>true
+(symbol? "abc")
+;=>false
+(symbol? :abc)
+;=>false
+(symbol? 123)
+;=>false
+(symbol? (symbol "abc"))
+;=>true
+(symbol "abc")
+;=>abc
+(keyword "abc")
+;=>:abc
+(keyword :abc)
+;=>:abc
+(keyword? :abc)
+;=>true
+(keyword? "abc")
+;=>false
+(keyword? (keyword "abc"))
+;=>true
+(string? "")
+;=>true
+(string? :a)
+;=>false
+(number? 1)
+;=>true
+(number? "1")
+;=>false
+
+;; Testing vector, sequential?, vector?, map?
+(vector)
+;=>[]
+(vector 1 2 3)
+;=>[1 2 3]
+(vector? [10 11])
+;=>true
+(vector? '(12 13))
+;=>false
+(vector? :hi)
+;=>false
+(sequential? (list 1 2 3))
+;=>true
+(sequential? [15])
+;=>true
+(sequential? sequential?)
+;=>false
+(sequential? nil)
+;=>false
+(sequential? "abc")
+;=>false
+(map? {})
+;=>true
+(map? (list))
+;=>false
+(map? [])
+;=>false
+(map? 'abc)
+;=>false
+(map? :abc)
+;=>false
+
+;; Testing hash-map functions
+(hash-map "a" 1)
+;=>{"a" 1}
+{"a" 1}
+;=>{"a" 1}
+(assoc {} "a" 1)
+;=>{"a" 1}
+(get (assoc (assoc {"a" 1 } "b" 2) "c" 3) "a")
+;=>1
+(def! hm1 (hash-map))
+;=>{}
+(map? hm1)
+;=>true
+(map? 1)
+;=>false
+(map? "abc")
+;=>false
+(get nil "a")
+;=>nil
+(get hm1 "a")
+;=>nil
+(contains? hm1 "a")
+;=>false
+(def! hm2 (assoc hm1 "a" 1))
+;=>{"a" 1}
+(get hm1 "a")
+;=>nil
+(contains? hm1 "a")
+;=>false
+(get hm2 "a")
+;=>1
+(contains? hm2 "a")
+;=>true
+(keys hm1)
+;=>()
+(keys hm2)
+;=>("a")
+(keys {"1" 1})
+;=>("1")
+(vals hm1)
+;=>()
+(vals hm2)
+;=>(1)
+(count (keys (assoc hm2 "b" 2 "c" 3)))
+;=>3
+(def! hm3 (assoc hm2 "b" 2))
+;=>{"a" 1 "b" 2}
+(count (keys hm3))
+;=>2
+(count (vals hm3))
+;=>2
+(dissoc hm3 "a")
+;=>{"b" 2}
+(dissoc hm3 "a" "b")
+;=>{}
+(dissoc hm3 "a" "b" "c")
+;=>{}
+(count (keys hm3))
+;=>2
+(dissoc {:cd 2} :ab)
+;=>{:cd 2}
+(keys {:a 1 :b 2})
+;=>(:a :b)
+(vals {:a 1 :b 2})
+;=>(1 2)
+
+;; Testing keywords as hash-map keys
+(def! hm4 (assoc {:a 1 :b 2} :a 3 :c 1))
+;=>{:a 3 :b 2 :c 1}
+(get hm4 :a)
+;=>3
+(get hm4 :b)
+;=>2
+(get hm4 :c)
+;=>1
+(contains? hm4 :a)
+;=>true
+(contains? hm4 :d)
+;=>false
+(contains? hm4 "a")
+;=>false
+(dissoc hm4 :a :b :d)
+;=>{:c 1}
+(count (keys hm4))
+;=>3
+(get {"a" 1 :a 2} "a")
+;=>1
+(get {"a" 1 :a 2} :a)
+;=>2
+(= {:a 1 :b 2} {:b 2 :a 1})
+;=>true
+(= {:a 1} {:a 2})
+;=>false
+(= {:a 1} {:a 1 :b 2})
+;=>false
+
+;; Testing assoc/dissoc do not mutate and evaluate arguments
+(def! hm5 {"k" 1})
+;=>{"k" 1}
+(assoc hm5 "k" 2)
+;=>{"k" 2}
+hm5
+;=>{"k" 1}
+(dissoc hm5 "k")
+;=>{}
+hm5
+;=>{"k" 1}
+{"a" (+ 1 2) :b [(+ 1 1)]}
+;=>{"a" 3 :b [2]}
+
+;; Hash-map errors
+(hash-map "a")
+;/.*Error.*
+(assoc {} 1 2)
+;/.*Error.*
+(assoc 1 "a" 2)
+;/.*Error.*
+(get 1 "a")
+;/.*Error.*
+(keys 1)
+;/.*Error.*
+
+;; Testing the language defined cond and not again
+(cond false 1 true 2)
+;=>2
+
+;; Testing str of mixed values
+(str :a 'b "c" 1 nil true)
+;=>":abc1niltrue"
+
+;; Runaway recursion is a catchable error, not a crash (R14)
+(def! runaway (fn* () (+ 1 (runaway))))
+;=>#<function>
+(try* (runaway) (catch* e (if (string? e) "caught-overflow" e)))
+;=>"caught-overflow"
+(runaway)
+;/.*Error.*
+(def! runaway2 (fn* () (do (runaway2) 1)))
+;=>#<function>
+(runaway2)
+;/.*Error.*
+(+ 1 2)
+;=>3

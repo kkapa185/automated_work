@@ -1,0 +1,146 @@
+;; Testing read-string, eval and slurp
+(read-string "(1 2 (3 4) nil)")
+;=>(1 2 (3 4) nil)
+(read-string "(+ 2 3)")
+;=>(+ 2 3)
+(read-string "7 ;; comment")
+;=>7
+(read-string ";; comment")
+;=>nil
+(eval (read-string "(+ 2 3)"))
+;=>5
+(read-string "\"a\\nb\"")
+;=>"a\nb"
+(read-string "(1 2")
+;/.*(EOF|end of input|unbalanced).*
+(read-string 5)
+;/.*Error.*
+
+;; Guide example: eval of a data structure
+(def! mal-prog (list + 1 2))
+;=>(#<function> 1 2)
+(eval mal-prog)
+;=>3
+(eval (list 1 2))
+;/.*Error.*
+
+;; slurp
+(slurp "tests/incA.mal")
+;=>";; fixture for load-file tests\n(def! inc4 (fn* (a) (+ 4 a)))\n(def! inc5 (fn* (a) (+ 5 a)))\n(prn \"incA.mal finished\")\n\"incA.mal return value\"\n"
+(slurp "tests/no-such-file.mal")
+;/.*Error.*
+
+;; Testing load-file
+(load-file "tests/incA.mal")
+"incA.mal finished"
+;=>nil
+(inc4 3)
+;=>7
+(inc5 3)
+;=>8
+(load-file "tests/incB.mal")
+;=>nil
+incB-loaded
+;=>true
+argv-in-file
+;=>()
+(load-file "tests/no-such-file.mal")
+;/.*Error.*
+
+;; eval uses the REPL environment
+(def! zed 5)
+;=>5
+(eval (read-string "zed"))
+;=>5
+(eval (read-string "(def! ev 9)"))
+;=>9
+ev
+;=>9
+(let* (zed 99) (eval (read-string "zed")))
+;=>5
+
+;; Testing atoms
+(def! inc3 (fn* (a) (+ 3 a)))
+;=>#<function>
+(def! a (atom 2))
+;=>(atom 2)
+(atom? a)
+;=>true
+(atom? 1)
+;=>false
+(atom? (list))
+;=>false
+(deref a)
+;=>2
+(reset! a 3)
+;=>3
+(deref a)
+;=>3
+(swap! a inc3)
+;=>6
+(deref a)
+;=>6
+(swap! a (fn* (a) a))
+;=>6
+(swap! a (fn* (a) (* 2 a)))
+;=>12
+(swap! a (fn* (a b) (* a b)) 10)
+;=>120
+(swap! a + 3)
+;=>123
+(swap! a +)
+;=>Error: +: expected 2 argument(s), got 1
+(deref a)
+;=>123
+
+;; Testing swap!/closure interaction
+(def! inc-it (fn* (a) (+ 1 a)))
+;=>#<function>
+(def! atm (atom 7))
+;=>(atom 7)
+(def! f (fn* () (swap! atm inc-it)))
+;=>#<function>
+(f)
+;=>8
+(f)
+;=>9
+
+;; Testing reader macro @
+(def! atm (atom 9))
+;=>(atom 9)
+@atm
+;=>9
+(def! b (atom (list 1 2)))
+;=>(atom (1 2))
+@b
+;=>(1 2)
+
+;; Atom printing and equality
+(pr-str (atom "x"))
+;=>"(atom \"x\")"
+(= (atom 1) (atom 1))
+;=>false
+(def! c (atom 1))
+;=>(atom 1)
+(= c c)
+;=>true
+
+;; Misc errors
+(deref 1)
+;/.*Error.*
+(reset! 1 2)
+;/.*Error.*
+(swap! 1 inc3)
+;/.*Error.*
+(swap! a 1)
+;/.*Error.*
+
+;; *ARGV* in REPL mode is the empty list
+*ARGV*
+;=>()
+
+;; load-file in the middle of a REPL session keeps definitions
+(def! with-comment "x")
+;=>"x"
+(load-file "tests/argv_none.mal")
+;/.*Error.*

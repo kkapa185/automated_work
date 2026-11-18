@@ -1,0 +1,7 @@
+{
+  "setup": ["go version"],
+  "test": ["make test"],
+  "build": ["make build"],
+  "lint": ["go vet ./..."],
+  "smoke": [{"command": "tests/smoke.sh"}]
+}

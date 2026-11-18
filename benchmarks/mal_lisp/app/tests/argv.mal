@@ -1,0 +1,4 @@
+(prn *ARGV*)
+(prn (count *ARGV*))
+(prn (+ 1 2))
+; comment

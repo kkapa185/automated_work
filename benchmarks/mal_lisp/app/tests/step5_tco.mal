@@ -1,0 +1,67 @@
+;; Testing recursive tail-call function (guide: sum2 is tail recursive)
+(def! sum2 (fn* (n acc) (if (= n 0) acc (sum2 (- n 1) (+ n acc)))))
+;=>#<function>
+(sum2 10 0)
+;=>55
+(def! res2 nil)
+;=>nil
+(def! res2 (sum2 10000 0))
+;=>50005000
+res2
+;=>50005000
+(sum2 100000 0)
+;=>5000050000
+
+;; sum-to is not in tail position; moderate depth must still work (R15)
+(def! sum-to (fn* (n) (if (= n 0) 0 (+ n (sum-to (- n 1))))))
+;=>#<function>
+(sum-to 10)
+;=>55
+(sum-to 10000)
+;=>50005000
+(sum-to 20000)
+;=>200010000
+
+;; Test mutually recursive tail-call functions
+(def! foo (fn* (n) (if (= n 0) 0 (bar (- n 1)))))
+;=>#<function>
+(def! bar (fn* (n) (if (= n 0) 0 (foo (- n 1)))))
+;=>#<function>
+(foo 10000)
+;=>0
+(foo 100000)
+;=>0
+
+;; TCO through do and let*
+(def! d (fn* (n) (do (if (= n 0) :done (d (- n 1))))))
+;=>#<function>
+(d 100000)
+;=>:done
+(def! l (fn* (n) (let* (m (- n 1)) (if (= m 0) :done (l m)))))
+;=>#<function>
+(l 100000)
+;=>:done
+
+;; Testing if on strings and let*/do without tail issues
+(if "" 7 8)
+;=>7
+(let* (a 1) (do (def! zz a) (+ zz 1)))
+;=>2
+(do (do 1 2))
+;=>2
+
+;; Closures survive TCO
+(def! mk (fn* (n) (fn* (m) (+ n m))))
+;=>#<function>
+((mk 3) 4)
+;=>7
+(def! cnt (fn* (n acc) (if (= n 0) acc (cnt (- n 1) (fn* () n)))))
+;=>#<function>
+((cnt 5 nil))
+;=>1
+
+;; Deep non-tail recursion error-free
+(def! f (fn* (n) (if (= n 0) 0 (+ 1 (f (- n 1))))))
+;=>#<function>
+(f 10000)
+;=>10000

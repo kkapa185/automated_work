@@ -1,9 +1,21 @@
 {
-  "setup": ["node --version"],
-  "test": ["node --test test/*.test.js"],
-  "build": ["node --check src/app.js"],
+  "setup": [
+    "node --version"
+  ],
+  "test": [
+    "npm test"
+  ],
+  "build": [
+    "node --check src/cli.js"
+  ],
   "smoke": [
-    {"command": "./serve --help"},
-    {"command": "./serve db.json --port 3917", "url": "http://127.0.0.1:3917/posts/1", "timeout_s": 60}
+    {
+      "command": "./serve --help"
+    },
+    {
+      "command": "./serve examples/db.json --port 39217",
+      "url": "http://127.0.0.1:39217/posts/1",
+      "timeout_s": 60
+    }
   ]
 }

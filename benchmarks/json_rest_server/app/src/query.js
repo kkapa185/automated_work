@@ -1,157 +1,152 @@
 'use strict';
-const crypto = require('node:crypto');
+const { isObj } = require('./store');
 
 const OPS = new Set(['eq', 'ne', 'lt', 'lte', 'gt', 'gte', 'in', 'contains', 'startsWith', 'endsWith']);
 
 function getPath(obj, p) {
   let cur = obj;
-  for (const k of p) {
-    if (cur === null || typeof cur !== 'object' || !Object.hasOwn(cur, k)) return undefined;
-    cur = cur[k];
+  for (const part of p.split('.')) {
+    if (cur === null || typeof cur !== 'object' || !Object.hasOwn(cur, part)) return undefined;
+    cur = cur[part];
   }
   return cur;
 }
 
-// Convert the query value q to the JSON type of field value f when q is a string.
-function coerce(q, f) {
-  if (typeof q === 'string') {
-    if (typeof f === 'number') {
-      return q.trim() !== '' && Number.isFinite(Number(q)) ? Number(q) : undefined;
+function numeric(x) {
+  if (typeof x === 'number') return x;
+  if (typeof x === 'string' && x.trim() !== '') return Number(x);
+  return NaN;
+}
+
+function eq(v, operand) {
+  if (v === undefined) return false;
+  if (v === null) return operand === null || operand === 'null';
+  if (typeof v === 'number') return v === numeric(operand);
+  if (typeof v === 'boolean') return String(v) === String(operand);
+  if (typeof v === 'string') return v === String(operand);
+  return false;
+}
+
+function order(v, operand) {
+  // returns negative/zero/positive, or NaN when incomparable
+  if (typeof v === 'number') {
+    const o = numeric(operand);
+    return Number.isNaN(o) || Number.isNaN(v) ? NaN : v - o;
+  }
+  if (typeof v === 'string') {
+    if (typeof operand === 'number') {
+      const nv = numeric(v);
+      return Number.isNaN(nv) ? NaN : nv - operand;
     }
-    if (typeof f === 'boolean') return q === 'true' ? true : q === 'false' ? false : undefined;
-    if (f === null) return q === 'null' ? null : undefined;
-    return q;
+    if (typeof operand !== 'string') return NaN;
+    return v < operand ? -1 : v > operand ? 1 : 0;
   }
-  if (typeof f === 'string' && (typeof q === 'number' || typeof q === 'boolean')) return String(q);
-  return q;
+  return NaN;
 }
 
-function same(a, b) {
-  if (a === b) return true;
-  if (a && b && typeof a === 'object' && typeof b === 'object') return JSON.stringify(a) === JSON.stringify(b);
-  return false;
+function test(v, op, operand) {
+  switch (op) {
+    case 'eq': return eq(v, operand);
+    case 'ne': return !eq(v, operand);
+    case 'lt': return order(v, operand) < 0;
+    case 'lte': return order(v, operand) <= 0;
+    case 'gt': return order(v, operand) > 0;
+    case 'gte': return order(v, operand) >= 0;
+    case 'in': return Array.isArray(operand) && operand.some((o) => eq(v, o));
+    case 'contains': case 'startsWith': case 'endsWith': {
+      if (typeof v !== 'string' || operand === null || typeof operand === 'object') return false;
+      const a = v.toLowerCase(), b = String(operand).toLowerCase();
+      return op === 'contains' ? a.includes(b) : op === 'startsWith' ? a.startsWith(b) : a.endsWith(b);
+    }
+    default: return false;
+  }
 }
 
-function test(f, op, q) {
-  if (f === undefined) return op === 'ne';
-  if (op === 'in') {
-    const list = Array.isArray(q) ? q : String(q).split(',');
-    return list.some((x) => same(coerce(x, f), f));
-  }
-  if (op === 'contains' || op === 'startsWith' || op === 'endsWith') {
-    if (f === null || typeof f === 'object') return false;
-    const s = String(f).toLowerCase();
-    const t = String(q).toLowerCase();
-    return op === 'contains' ? s.includes(t) : op === 'startsWith' ? s.startsWith(t) : s.endsWith(t);
-  }
-  const c = coerce(q, f);
-  if (op === 'eq') return same(c, f);
-  if (op === 'ne') return !same(c, f);
-  if (c === undefined || typeof c !== typeof f || (typeof f !== 'number' && typeof f !== 'string')) return false;
-  if (op === 'lt') return f < c;
-  if (op === 'lte') return f <= c;
-  if (op === 'gt') return f > c;
-  if (op === 'gte') return f >= c;
-  return false;
-}
-
-// Flat query-string conditions -> predicate list
+// Build predicate from URL search params (conditions only).
 function conditionsFromParams(params) {
   const conds = [];
-  for (const [key, value] of params) {
-    if (key.startsWith('_')) continue;
-    const idx = key.lastIndexOf(':');
-    let field = key, op = 'eq';
-    if (idx >= 0) {
-      field = key.slice(0, idx);
-      op = key.slice(idx + 1);
-      if (!OPS.has(op)) continue; // unknown operator: ignored
-    }
-    if (!field) continue;
-    conds.push({ path: field.split('.'), op, value });
+  for (const [k, raw] of params) {
+    if (k.startsWith('_')) continue;
+    let field = k, op = 'eq';
+    const idx = k.lastIndexOf(':');
+    if (idx > 0 && OPS.has(k.slice(idx + 1))) { field = k.slice(0, idx); op = k.slice(idx + 1); }
+    conds.push({ field, op, operand: op === 'in' ? raw.split(',') : raw });
   }
-  return (item) => conds.every((c) => test(getPath(item, c.path), c.op, c.value));
+  return (item) => conds.every((c) => test(getPath(item, c.field), c.op, c.operand));
 }
 
-// _where: returns predicate or null when invalid
-function whereToPredicate(node, prefix = []) {
-  if (node === null || typeof node !== 'object' || Array.isArray(node)) return null;
+// Build predicate from a parsed _where object; returns null if invalid.
+function whereToPredicate(w, prefix = '') {
+  if (!isObj(w)) return null;
   const preds = [];
-  for (const [k, v] of Object.entries(node)) {
+  for (const [k, val] of Object.entries(w)) {
     if (k === 'and' || k === 'or') {
-      if (!Array.isArray(v)) return null;
-      const subs = v.map((x) => whereToPredicate(x, prefix));
+      if (!Array.isArray(val)) return null;
+      const subs = val.map((x) => whereToPredicate(x, prefix));
       if (subs.some((s) => !s)) return null;
       preds.push(k === 'and' ? (it) => subs.every((s) => s(it)) : (it) => subs.some((s) => s(it)));
     } else if (k === 'not') {
-      const sub = whereToPredicate(v, prefix);
+      const sub = whereToPredicate(val, prefix);
       if (!sub) return null;
       preds.push((it) => !sub(it));
-    } else if (OPS.has(k) && prefix.length) {
-      preds.push((it) => test(getPath(it, prefix), k, v));
-    } else if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
-      const sub = whereToPredicate(v, [...prefix, k]);
-      if (!sub) return null;
-      preds.push(sub);
     } else {
-      preds.push((it) => test(getPath(it, [...prefix, k]), 'eq', v));
+      const field = prefix ? `${prefix}.${k}` : k;
+      if (isObj(val)) {
+        const keys = Object.keys(val);
+        const opKeys = keys.filter((x) => OPS.has(x));
+        if (keys.length && opKeys.length === keys.length) {
+          for (const op of opKeys) {
+            const operand = val[op];
+            preds.push((it) => test(getPath(it, field), op, operand));
+          }
+        } else {
+          const sub = whereToPredicate(val, field);
+          if (!sub) return null;
+          preds.push(sub);
+        }
+      } else {
+        preds.push((it) => test(getPath(it, field), 'eq', val));
+      }
     }
   }
   return (it) => preds.every((p) => p(it));
 }
 
-function buildFilter(params) {
-  const w = params.get('_where');
-  if (w !== null) {
-    try {
-      const pred = whereToPredicate(JSON.parse(w));
-      if (pred) return pred;
-    } catch { /* invalid _where: fall back to normal params */ }
-  }
-  return conditionsFromParams(params);
+function compareValues(a, b) {
+  if (typeof a === 'number' && typeof b === 'number') return a - b;
+  if (typeof a === 'string' && typeof b === 'string') return a.toLowerCase().localeCompare(b.toLowerCase());
+  if (typeof a === 'boolean' && typeof b === 'boolean') return Number(a) - Number(b);
+  const rank = (x) => (typeof x === 'number' ? 0 : typeof x === 'string' ? 1 : 2);
+  return rank(a) - rank(b);
 }
 
-function rank(v) {
-  return typeof v === 'number' ? 0 : typeof v === 'string' ? 1 : typeof v === 'boolean' ? 2 : 3;
-}
-
-function cmpValues(a, b) {
-  const ra = rank(a), rb = rank(b);
-  if (ra !== rb) return ra - rb;
-  if (ra === 3) return 0;
-  return a < b ? -1 : a > b ? 1 : 0;
-}
-
-function sortItems(items, spec) {
-  const keys = spec.split(',').map((s) => s.trim()).filter(Boolean).map((s) =>
-    s[0] === '-' ? { path: s.slice(1).split('.'), dir: -1 } : { path: (s[0] === '+' ? s.slice(1) : s).split('.'), dir: 1 });
+function sortItems(items, sortParam) {
+  const keys = sortParam.split(',').map((s) => s.trim()).filter(Boolean).map((s) =>
+    s.startsWith('-') ? { f: s.slice(1), dir: -1 } : { f: s.replace(/^\+/, ''), dir: 1 });
   if (!keys.length) return items;
-  const decorated = items.map((it, i) => ({ it, i, vals: keys.map((k) => getPath(it, k.path)) }));
-  decorated.sort((x, y) => {
-    for (let k = 0; k < keys.length; k++) {
-      const a = x.vals[k], b = y.vals[k];
+  return items.map((it, i) => ({ it, i })).sort((x, y) => {
+    for (const { f, dir } of keys) {
+      const a = getPath(x.it, f), b = getPath(y.it, f);
       const am = a === undefined || a === null, bm = b === undefined || b === null;
-      if (am || bm) { if (am && bm) continue; return am ? 1 : -1; } // missing last
-      const c = cmpValues(a, b);
-      if (c) return c * keys[k].dir;
+      if (am || bm) { if (am && bm) continue; return am ? 1 : -1; }
+      const c = compareValues(a, b);
+      if (c) return dir * c;
     }
     return x.i - y.i;
-  });
-  return decorated.map((d) => d.it);
+  }).map((x) => x.it);
 }
 
-function positiveInt(s, def) {
-  if (s === null || !/^\s*\d+\s*$/.test(s)) return def;
-  const n = parseInt(s, 10);
-  return n >= 1 ? n : def;
+function posInt(v, dflt) {
+  if (v === null || !/^\s*\d+\s*$/.test(v)) return dflt;
+  const n = parseInt(v, 10);
+  return n >= 1 ? n : dflt;
 }
 
 function paginate(items, params) {
-  const perPage = positiveInt(params.get('_per_page'), 10);
+  const perPage = posInt(params.get('_per_page'), 10);
   const total = items.length;
   const pages = Math.max(1, Math.ceil(total / perPage));
-  const page = Math.min(positiveInt(params.get('_page'), 1), pages);
-  const start = (page - 1) * perPage;
+  const page = Math.min(posInt(params.get('_page'), 1), pages);
   return {
     first: 1,
     prev: page > 1 ? page - 1 : null,
@@ -159,62 +154,77 @@ function paginate(items, params) {
     last: pages,
     pages,
     items: total,
-    data: items.slice(start, start + perPage),
+    data: items.slice((page - 1) * perPage, page * perPage),
   };
 }
 
 function singular(name) {
-  if (name.endsWith('ies') && name.length > 3) return name.slice(0, -3) + 'y';
-  if (name.endsWith('s') && name.length > 1) return name.slice(0, -1);
+  if (/ies$/.test(name)) return name.slice(0, -3) + 'y';
+  if (/s$/.test(name)) return name.slice(0, -1);
   return name;
 }
 
-function pluralCandidates(name) {
-  const c = [name + 's', name + 'es'];
-  if (name.endsWith('y')) c.unshift(name.slice(0, -1) + 'ies');
-  return c;
-}
+function sameId(a, b) { return a !== undefined && a !== null && b !== undefined && b !== null && String(a) === String(b); }
 
-// Returns function(item) -> item with embedded relations
-function makeEmbedder(data, collection, embeds) {
-  const fk = singular(collection) + 'Id';
-  const steps = [];
-  for (const e of embeds) {
-    if (Array.isArray(data[e]) && Object.hasOwn(data, e)) {
-      const byParent = new Map();
-      for (const child of data[e]) {
-        if (child && typeof child === 'object' && child[fk] !== undefined && child[fk] !== null) {
-          const k = String(child[fk]);
-          if (!byParent.has(k)) byParent.set(k, []);
-          byParent.get(k).push(child);
-        }
+function embedItems(store, coll, items, embeds) {
+  const fk = `${singular(coll)}Id`;
+  const specs = embeds.map((name) => {
+    if (store.kind(name) === 'array' && name !== coll) return { name, type: 'child' };
+    const parent = store.collections().find((c) => singular(c) === name || c === name);
+    if (parent) return { name, type: 'parent', coll: parent };
+    return null;
+  }).filter(Boolean);
+  if (!specs.length) return items;
+  // index children by foreign key to avoid quadratic work
+  const idx = new Map();
+  for (const s of specs) {
+    if (s.type === 'child') {
+      const m = new Map();
+      for (const c of store.data[s.name]) {
+        if (!isObj(c) || c[fk] === undefined || c[fk] === null) continue;
+        const k = String(c[fk]);
+        if (!m.has(k)) m.set(k, []);
+        m.get(k).push(c);
       }
-      steps.push((item, out) => { out[e] = item.id === undefined ? [] : byParent.get(String(item.id)) || []; });
-      continue;
-    }
-    const pname = pluralCandidates(e).find((p) => Object.hasOwn(data, p) && Array.isArray(data[p]));
-    if (pname) {
-      const byId = new Map();
-      for (const p of data[pname]) if (p && p.id !== undefined) byId.set(String(p.id), p);
-      steps.push((item, out) => {
-        const ref = item[e + 'Id'];
-        out[e] = ref === undefined || ref === null ? null : byId.get(String(ref)) || null;
-      });
+      idx.set(s.name, m);
+    } else {
+      const m = new Map();
+      for (const p of store.data[s.coll]) if (isObj(p) && p.id !== undefined) m.set(String(p.id), p);
+      idx.set(s.name, m);
     }
   }
-  if (!steps.length) return (it) => it;
-  return (item) => {
-    const out = { ...item };
-    for (const s of steps) s(item, out);
+  return items.map((it) => {
+    const out = { ...it };
+    for (const s of specs) {
+      if (s.type === 'child') out[s.name] = (idx.get(s.name).get(String(it.id)) || []).slice();
+      else {
+        const v = it[`${s.name}Id`];
+        out[s.name] = v === undefined || v === null ? null : (idx.get(s.name).get(String(v)) || null);
+      }
+    }
     return out;
-  };
+  });
 }
 
-function genId(existing) {
-  for (;;) {
-    const id = crypto.randomBytes(4).toString('hex');
-    if (!existing.has(id)) return id;
+function listQuery(store, coll, params) {
+  let items = store.data[coll].filter(isObj);
+  let pred = null;
+  if (params.has('_where')) {
+    let parsed;
+    try { parsed = JSON.parse(params.get('_where')); } catch { parsed = undefined; }
+    pred = whereToPredicate(parsed);
   }
+  if (!pred) pred = conditionsFromParams(params);
+  items = items.filter(pred);
+  if (params.has('_sort')) items = sortItems(items, params.get('_sort'));
+  const embeds = params.getAll('_embed').flatMap((s) => s.split(',')).map((s) => s.trim()).filter(Boolean);
+  const paged = params.has('_page') || params.has('_per_page');
+  if (paged) {
+    const res = paginate(items, params);
+    res.data = embedItems(store, coll, res.data, embeds);
+    return res;
+  }
+  return embedItems(store, coll, items, embeds);
 }
 
-module.exports = { buildFilter, sortItems, paginate, makeEmbedder, singular, genId, getPath, OPS };
+module.exports = { listQuery, embedItems, singular, sameId, getPath, test, whereToPredicate };

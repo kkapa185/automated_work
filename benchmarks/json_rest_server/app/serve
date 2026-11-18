@@ -1,4 +1,2 @@
 #!/usr/bin/env node
-'use strict';
-process.env.SERVE_MAIN = '1';
-require('./src/cli.js');
+require('./src/cli').main(process.argv.slice(2));

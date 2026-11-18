@@ -1,0 +1,14 @@
+#!/bin/sh
+# Start the REPL (or run FILE ARGS...) of the step named by $STEP (default stepA_mal).
+# The step binary is (re)built on demand into bin/.
+STEP="${STEP:-stepA_mal}"
+root=$(cd "$(dirname "$0")" && pwd)
+if [ ! -d "$root/cmd/$STEP" ]; then
+    echo "run: unknown step '$STEP'" >&2
+    exit 2
+fi
+bin="$root/bin/$STEP"
+if [ ! -x "$bin" ] || [ -n "$(find "$root/cmd/$STEP" "$root/internal" "$root/go.mod" -newer "$bin" -name '*.go' -o -newer "$bin" -name go.mod 2>/dev/null | head -n 1)" ]; then
+    (cd "$root" && go build -o "$bin" "./cmd/$STEP") || exit 3
+fi
+exec "$bin" "$@"
