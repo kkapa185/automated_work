@@ -258,3 +258,8 @@ def test_prompts_make_spec_normative_and_examples_tests():
         assert "must become an automated test" in text and "never by\n  running your own implementation" in text
     assert "every concrete example given in the ticket" in plan
     assert "check every default value" in rev
+
+
+def test_prompts_require_worst_case_performance_tests():
+    from prompts import implement_prompt
+    assert "worst-case input shapes" in implement_prompt(None)

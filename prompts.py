@@ -36,6 +36,10 @@ ENGINEERING_PRINCIPLES = """Engineering principles (apply them to whatever kind 
   your memory of a similar existing tool, library or format differs from them, follow the ticket and
   documents. Do not add defaults, options, constants or behaviour that they do not call for; record any
   doubt as an assumption instead of silently "improving" the spec.
+- When the ticket states performance, scalability or complexity requirements (throughput, time limits,
+  "linear time", input sizes), add automated benchmark tests that assert them at the stated sizes on the
+  worst-case input shapes you can construct (deep nesting, long runs of one token, many repetitions,
+  pathological backtracking, large fan-out), and fix any super-linear behaviour they expose.
 - Every concrete example in the ticket or provided documents (an input with its expected output, a
   sample command with its printed result, a byte-level format sample) must become an automated test that
   asserts exactly that output. Compute known-answer test vectors from the written definition, never by

@@ -156,6 +156,14 @@
       "max_turns": 14,
       "cli_timeout_s": 5400,
       "verify_timeout_s": 1800
+    },
+    {
+      "name": "json_rest_server",
+      "reference_repo": "https://github.com/typicode/json-server",
+      "reference_path": "/home/user/reference/json-server",
+      "max_turns": 12,
+      "cli_timeout_s": 5400,
+      "verify_timeout_s": 1800
     }
   ]
 }
