@@ -137,6 +137,17 @@
       "max_turns": 16,
       "cli_timeout_s": 5400,
       "verify_timeout_s": 1800
+    },
+    {
+      "name": "git_vcs",
+      "reference_repo": "https://github.com/git/git",
+      "reference_path": "/home/user/reference/git",
+      "max_turns": 16,
+      "cli_timeout_s": 5400,
+      "verify_timeout_s": 1800,
+      "constraints": [
+        "The real `git` binary may be used only inside your own test-suite to validate interoperability; the tool itself must never invoke git."
+      ]
     }
   ]
 }
