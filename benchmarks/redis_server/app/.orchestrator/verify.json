@@ -1,0 +1,19 @@
+{
+  "setup": [
+    "go mod download"
+  ],
+  "test": [
+    "go test -count=1 ./..."
+  ],
+  "build": [
+    "go build -o bin/kvserver ./cmd/kvserver"
+  ],
+  "lint": [
+    "go vet ./..."
+  ],
+  "smoke": [
+    {
+      "command": "tests/smoke.sh"
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+#!/bin/sh
+# Launcher: builds bin/kvserver on demand (stdlib-only Go), then execs it.
+# Usage: ./serve --port <port> [--dir <data-dir>]
+set -e
+root=$(cd "$(dirname "$0")" && pwd)
+bin="$root/bin/kvserver"
+if [ ! -x "$bin" ] || [ -n "$(find "$root/cmd" "$root/internal" "$root/go.mod" -newer "$bin" -type f | head -1)" ]; then
+  (cd "$root" && go build -o bin/kvserver ./cmd/kvserver)
+fi
+exec "$bin" "$@"

@@ -1,0 +1,5 @@
+#!/bin/sh
+# Launcher: (re)builds build/engine with make when sources changed, then runs it.
+d=$(cd "$(dirname "$0")" && pwd)
+make -s -C "$d" build/engine >&2 || exit 1
+exec "$d/build/engine" "$@"

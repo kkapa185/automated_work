@@ -1,0 +1,6 @@
+{
+  "setup": ["python3 --version"],
+  "test": ["./run_tests.sh"],
+  "build": ["make build/engine"],
+  "smoke": [{"command": "./smoke.sh"}]
+}

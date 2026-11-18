@@ -1,0 +1,7 @@
+{"milestones": [
+ {"id":"M1","title":"Skeleton, RESP, test harness, keys & strings","goal":"Server binary, ./serve, RESP2/inline/pipelining, executor, connection/server commands, key space with expiry (lazy+active), key commands, string commands, test harness + unit tests, README stub, Makefile.","criteria":["R1","R2","R3","R4","R5","R6","R7","R16","R17","R18"]},
+ {"id":"M2","title":"Lists, hashes, sets","goal":"All list (incl. blocking BLPOP/BRPOP FIFO), hash and set commands with tests.","criteria":["R8","R9","R10"]},
+ {"id":"M3","title":"Sorted sets","goal":"All sorted-set commands with Redis score formatting, range variants and store ops, with tests.","criteria":["R11"]},
+ {"id":"M4","title":"Transactions and Pub/Sub","goal":"MULTI/EXEC/DISCARD/WATCH/UNWATCH and pub/sub with exact formats, with tests.","criteria":["R12","R13"]},
+ {"id":"M5","title":"Persistence, performance, hardening, docs","goal":"Snapshot SAVE/BGSAVE/load with TTL survival, concurrency & throughput tests, race detector, final README.","criteria":["R14","R15"]}
+]}
