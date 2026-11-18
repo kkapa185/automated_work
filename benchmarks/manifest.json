@@ -129,6 +129,14 @@
       "max_turns": 16,
       "cli_timeout_s": 5400,
       "verify_timeout_s": 1800
+    },
+    {
+      "name": "redis_server",
+      "reference_repo": "https://github.com/redis/redis",
+      "reference_path": "/home/user/reference/redis",
+      "max_turns": 16,
+      "cli_timeout_s": 5400,
+      "verify_timeout_s": 1800
     }
   ]
 }
