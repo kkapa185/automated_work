@@ -148,6 +148,14 @@
       "constraints": [
         "The real `git` binary may be used only inside your own test-suite to validate interoperability; the tool itself must never invoke git."
       ]
+    },
+    {
+      "name": "chess_engine",
+      "reference_repo": "https://github.com/official-stockfish/Stockfish",
+      "reference_path": "/home/user/reference/Stockfish",
+      "max_turns": 14,
+      "cli_timeout_s": 5400,
+      "verify_timeout_s": 1800
     }
   ]
 }

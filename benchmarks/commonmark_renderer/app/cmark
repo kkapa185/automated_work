@@ -1,0 +1,81 @@
+#!/usr/bin/env python3
+"""cmark-compatible CommonMark -> HTML command line tool."""
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+
+from cmarklib import markdown_to_html  # noqa: E402
+
+USAGE = """Usage:   cmark [FILE*]
+Options:
+  --to, -t FORMAT  Specify output format (html)
+  --sourcepos      Include source position attribute
+  --hardbreaks     Treat newlines as hard line breaks
+  --nobreaks       Render soft line breaks as spaces
+  --unsafe         Render raw HTML and unsafe links
+  --smart          Use smart punctuation
+  --version        Print version
+  --help, -h       Print usage information
+"""
+
+
+def main(argv):
+    opts = dict(unsafe=False, hardbreaks=False, nobreaks=False, smart=False,
+                sourcepos=False)
+    files = []
+    fmt = 'html'
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a in ('--unsafe', '--hardbreaks', '--nobreaks', '--smart', '--sourcepos'):
+            opts[a[2:]] = True
+        elif a in ('--help', '-h'):
+            sys.stdout.write(USAGE)
+            return 0
+        elif a == '--version':
+            sys.stdout.write('cmark (python) CommonMark 0.31.2\n')
+            return 0
+        elif a in ('--to', '-t'):
+            i += 1
+            if i >= len(argv):
+                sys.stderr.write('%s requires an argument\n' % a)
+                return 1
+            fmt = argv[i]
+        elif a.startswith('--to='):
+            fmt = a[5:]
+        elif a == '--':
+            files.extend(argv[i + 1:])
+            break
+        elif a.startswith('-') and a != '-':
+            sys.stderr.write('Unknown option %s\n%s' % (a, USAGE))
+            return 1
+        else:
+            files.append(a)
+        i += 1
+    if fmt != 'html':
+        sys.stderr.write('Unknown format %s\n' % fmt)
+        return 1
+    if files:
+        chunks = []
+        for f in files:
+            try:
+                if f == '-':
+                    chunks.append(sys.stdin.buffer.read())
+                else:
+                    with open(f, 'rb') as fh:
+                        chunks.append(fh.read())
+            except OSError as e:
+                sys.stderr.write('Error reading %s: %s\n' % (f, e.strerror))
+                return 1
+        data = b''.join(chunks)
+    else:
+        data = sys.stdin.buffer.read()
+    html = markdown_to_html(data, **opts)
+    sys.stdout.buffer.write(html.encode('utf-8', 'replace'))
+    sys.stdout.buffer.flush()
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv[1:]))
