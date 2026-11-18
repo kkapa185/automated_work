@@ -35,7 +35,7 @@ Run with `python benchmarks/runner.py run [--only NAME]`; it is resumable and su
 | [git_vcs](git_vcs/report.md) | [git/git](https://github.com/git/git) | not run | – | – | – | – |
 | [chess_engine](chess_engine/report.md) | [official-stockfish/Stockfish](https://github.com/official-stockfish/Stockfish) | COMPLETED | 1.00 | 28/28 | 5 | $1.67 |
 | [json_rest_server](json_rest_server/report.md) | [typicode/json-server](https://github.com/typicode/json-server) | COMPLETED | 0.76 → 0.98 | 48/49 | 4 | $1.08 |
-| [nanogpt_training](nanogpt_training/report.md) | [karpathy/nanoGPT](https://github.com/karpathy/nanoGPT) | not run | – | – | – | – |
+| [nanogpt_training](nanogpt_training/report.md) | [karpathy/nanoGPT](https://github.com/karpathy/nanoGPT) | COMPLETED | 1.00 | 13/13 | 4 | $0.52 |
 
 ## System improvements triggered by these benchmarks
 All of these are generic and none is specific to a project. Each has tests in `tests/`.
