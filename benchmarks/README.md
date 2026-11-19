@@ -51,6 +51,9 @@ All of these are generic and none is specific to a project. Each has tests in `t
 | itsdangerous attempt 2 | model memory of a similar tool overrode the spec (an undocumented `key_derivation="hmac"` default); self-derived test vectors hid it | prompts: ticket/docs are normative, no undocumented defaults, examples become exact tests, known-answer vectors are derived from the definition; review re-checks every default |
 | cost reporting | the CLI's `total_cost_usd` is cumulative per session; summing it overstated cost ~3x | per-turn deltas (`turn_cost`), `runner.py fix-costs` |
 | MATLAB hub | 81 MB of benchmark input data copied into the committed app | runner excludes the prepared inputs |
+| round 3 (large apps) | single implement turns of 1 h+ with no intermediate verification | **milestone mode**: plan writes `.orchestrator/milestones.json`; one implement turn per milestone, a cumulative gate and bounded heals per milestone, turn budget scaled by milestones; resumable per milestone |
+| chess engine (round 3) | a usage-limit pause *during the plan turn* left a bound session with no plan; resume skipped hydration and planning | planning completion is decided from the turn history; an interrupted plan turn is re-sent to the same session |
+| cmark (round 3) | linear-time requirement met in general, but the system's tests missed worst-case shapes (deeply nested lists) | prompt rule: timed benchmark tests at the stated sizes on worst-case inputs |
 
 Several low first-attempt scores (Pascal, itsdangerous, slugify, jsmn, hexyl) came from **inaccurate or
 ambiguous tickets that I wrote**, not from the system: it followed them exactly. Each such case is
