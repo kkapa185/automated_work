@@ -1,62 +1,84 @@
-# Lua 5.4 interpreter in Go
+# Lua 5.5 interpreter
 
-A from-scratch interpreter for the Lua 5.4 language and its standard libraries, written in Go with
-no third-party dependencies and no code taken from any existing Lua implementation. The reference
-manual in `docs/manual.of` is the normative specification.
+A from-scratch interpreter for the Lua 5.5 language and its standard libraries, written in C11 with no third-party
+code (libc and libm only). The Lua 5.5 reference manual in `docs/manual.of` is the specification: besides the
+Lua 5.4 feature set it implements the 5.5 `global` declarations (`global x`, `global<const> *`, `global function`),
+read-only loop control variables, and the 4-value generic `for` with a closing value.
 
-## Install, run, test
+## Requirements
 
-Requirements: Go >= 1.21 (developed with 1.24) and a POSIX shell. Nothing else (no modules to download).
+Linux x86-64 with `gcc` and `make` (the coroutine context switch is x86-64 assembly). Nothing else to install.
 
-    ./lua script.lua a b     # builds bin/lua on first use (and whenever a .go file changed), then runs it
-    make build               # or: go build -o bin/lua .
-    make test                # go vet + go test + tests/run_tests.sh
+## Build, run, test
 
-CLI: `./lua [script [args]]`. `arg` is set (`arg[0]` = script, `arg[1..]`, negative index `-1` = "lua") and the
-script receives the arguments as `...`. With no script (or `-`) the program is read from stdin; `-e chunk`
-runs a chunk; `-v` prints the version. An uncaught error prints `lua: <message>` and a `stack traceback:` to
-stderr and exits with status 1 (syntax errors likewise). `os.exit(n|true|false)` is honoured and flushes stdout.
-`require` searches `package.path` (`./?.lua;./?/init.lua`) and additionally the directory of the main script.
+    make                         # builds bin/luai (gcc -O2)
+    ./lua script.lua a b         # run a script; `arg` and `...` hold "a", "b"
+    ./lua -                      # run a program read from stdin (also: ./lua < prog.lua)
+    ./lua -e 'print(1 + 1)'      # run a command-line chunk
+    make test                    # build, then run the whole test-suite (same as: sh tests/run.sh)
 
-## Tests
+`./lua` is a small launcher script: it builds `bin/luai` on first use (so a fresh checkout works with just `./lua`)
+and then `exec`s it. Uncaught errors print `lua: <message>` followed by a `stack traceback:` to stderr and exit with
+status 1; `os.exit(n | true | false)` sets the status; syntax errors report `file:line: message near 'token'`.
 
-`make test` runs:
+## Test-suite (`tests/`)
 
-* `go test ./...` - unit tests for the lexer, number parsing/formatting, tables, parser errors, helpers (`core_test.go`).
-* `tests/run_tests.sh` - runs every `tests/cases/*.lua` and compares stdout with the `.expected` file, then
-  CLI tests (exit codes, stderr text, `arg`, stdin scripts, `io.read` on stdin, `os.exit`), then performance
-  smoke tests (`tests/perf/`, wall-clock limits: `fib(25)` < 2 s, 1e6-iteration loops < 1 s, table/string workload < 3 s).
-  Case files use `tests/cases/prelude.lua` (`eq`, `err`, `cerr` helpers). Expected values and error messages were
-  derived from the manual, not recorded from this implementation.
-* `tests/smoke/*.lua` are the scripts used by the verification smoke checks.
+`tests/run.sh` builds the interpreter, then runs and reports (PASS/FAIL per file, non-zero exit on any failure):
+
+| Directory | What it contains |
+| --- | --- |
+| `tests/cases/*.lua` | self-checking Lua scripts (`assert`): lexer, operators and number semantics, statements/closures/goto/varargs/tail calls, errors and messages, metatables, 5.5 declarations and `<close>`, coroutines, GC, strings (patterns, `format`, `pack`), tables, math/utf8, os/io, base/package/debug, manual examples, table internals, robustness limits |
+| `tests/cli/*.sh` | command-line behaviour: `arg`, exit codes, stderr/traceback format, stdin programs, `os.exit`, stdin reading |
+| `tests/bench/*.lua` | timed tests (`-- limit: N` seconds in the header): `fib(25)`, 1e6/1e7-iteration loops, 1e6 table operations, sorting 1e5, 1e7-byte strings, coroutine switching, pathological shapes (190000-deep recursion, 5000-term operator chains, 1e6-character pattern subjects, 200000-term concatenation, ...), and `requirements_perf.lua` which asserts each performance requirement individually |
+| `tests/fixtures/` | modules loaded by the `require`/`dofile` tests |
+
+Expected values are derived from the manual's definitions and examples (the manual's own examples are in
+`tests/cases/manual_examples.lua` and `strings.lua`), not by recording the interpreter's output.
 
 ## Design
 
-| File | Role |
-|------|------|
-| `lexer.go`, `parser.go`, `ast.go` | Lexer and recursive-descent parser. Scopes, local slots, upvalues, `goto` labels and `<const>`/`<close>` checks are resolved while parsing, so the AST already refers to variables. |
-| `compile.go` | Turns the AST into Go closures (`func(*Frame) Value`, `func(*Frame) ctl`) - no bytecode. Captured locals live in `*Cell`s, others in frame slots (fresh cell per loop iteration). Control flow (`break`, `goto`, `return`, tail call) is returned as a status code. |
-| `interp.go` | Frames, calls, proper tail calls (trampoline in `callLua`), error values (`panic(*LuaError)`), metamethod dispatch, arithmetic/comparison/concat semantics, `pcall`, tracebacks. |
-| `table.go` | Tables: array part + insertion-ordered hash part (tombstones keep `next` valid while fields are cleared during traversal). |
-| `value.go` | Value model (`interface{}`: nil, bool, int64, float64, string, `*Table`, `*Closure`, `*GoFunction`, `*Coroutine`, `*Userdata`); `%.14g` number formatting; numeral parsing (decimal, hex, hex floats). |
-| `lib_base.go`, `main.go` | Base library, `package`/`require`, `load`, CLI. |
-| `lib_string.go`, `lib_string_reg.go` | `string`: own Lua pattern matcher, C-style `format` (incl. `%q`, `%a`), `pack`/`unpack`/`packsize`. |
-| `lib_table_math.go` | `table` (metamethod-aware) and `math` (xoshiro256** `random`). |
-| `lib_utf8_co.go` | `utf8`, and `coroutine`: each coroutine runs on its own goroutine with channel hand-off, so yields work across `pcall`, iterators and nested calls; `coroutine.close` unwinds the goroutine and runs pending `<close>` handlers. |
-| `lib_os.go`, `lib_io.go`, `lib_debug.go` | `os`, `io` (stdout is shared with `print`, so output ordering is preserved), a small `debug`. |
+* **Front end** (`src/parse.c`): source -> tokens -> AST. Variables are resolved at parse time to frame slots
+  (locals), upvalue indices, or `_ENV` field accesses (globals). Locals captured by closures live in heap boxes; all
+  other locals live directly in the frame (`alloca`'d on the C stack). The 5.5 rules for `global` declarations and
+  `<const>`/`<close>` attributes are enforced at compile time; `goto` visibility and "jumps into the scope of a
+  local" are checked per block. Parser nesting is limited to 190 levels (`chunk has too many syntax levels`);
+  `a..b..c` chains and long `if/elseif` chains are handled iteratively.
+* **Evaluation** (`src/interp.c`): a tree-walking interpreter over the resolved AST. Multiple results travel through
+  a per-thread return buffer; `return f(x)` is a proper tail call (trampoline in `call_lua`). Errors use
+  `setjmp/longjmp`; `pcall`/`xpcall` catch them (message handlers run at the raise point so tracebacks see the
+  failing stack), to-be-closed variables are unwound on every exit path, and runtime errors carry
+  `chunk:line:` plus variable information (`local 'x'`, `global 'f'`, `field 'a'`, `upvalue`, `method`, `constant`).
+* **Memory** (`src/gc.c`, `src/table.c`): stop-the-world mark & sweep. Heap objects are marked exactly; C stacks
+  (main and every coroutine) and registers are scanned conservatively, so interpreter code can keep `Value`s in C
+  locals. Collections run only at safe points (function entry, loop back edges), where no call results are in
+  flight; frames are zero-initialised and the stack below shallow calls is scrubbed so stale words do not retain
+  garbage. Short strings (<= 40 bytes) are interned; long strings hash lazily, so `s = s .. x` loops cost one copy
+  per step. Tables have an array part plus an open-addressing hash part; integer keys migrate to the array part
+  (append path and density-based rehash), `next` tolerates assigning `nil` during traversal.
+* **Coroutines** (`src/lib_coroutine.c`): each coroutine owns a lazily-committed 8 MiB `mmap` stack (1 MiB if that
+  fails) and switches with a tiny assembly routine, so `yield` works across `pcall`, metamethods, iterators and
+  library callbacks such as `table.sort` comparators. Stacks of dead or collected coroutines go back to a pool.
+* **Stacks and limits**: the interpreter runs on a 1 GiB lazily-committed stack with a call-depth limit of 200000;
+  every thread checks the stack pointer, so runaway recursion (Lua, metamethod, `pcall`, `gsub` callbacks, ...) and
+  huge argument lists raise a catchable `stack overflow` error instead of crashing. Pattern matching is iterative
+  per character and nests at most 200 pattern items (`pattern too complex`).
+* **Libraries**: `lib_base.c` (base), `lib_string.c` (patterns, `format`, `pack`/`unpack`), `lib_table.c` (introsort
+  that honours `__index`/`__newindex`/`__len`), `lib_math.c` (xoshiro256** `random`), `lib_utf8.c`, `lib_os.c`,
+  `lib_io.c` (stdio-backed file userdata, `popen`), `lib_package.c` (`require`/`package` and a minimal `debug`).
 
-Key points: strings are Go byte strings (no encoding assumptions); integers are 64-bit and wrap; floats are
-`float64`; variable names are recorded at compile time so errors read like
-`file:3: attempt to index a nil value (field 'x')`. Call depth is limited to 200000 Lua frames (a catchable
-`stack overflow` error) and the Go stack limit is raised accordingly; tail calls do not consume depth.
+## Performance (typical, this machine)
 
-## Behaviour notes and limitations
+`fib(32)` 0.4 s; 5e7-iteration `for` loop 0.8 s; 5e6 method calls 0.5 s; 1e7-element array fill + sum 0.8 s;
+sorting 3e5 numbers 0.1 s; 5e5 coroutine switches 0.1 s; sieve to 5e6 1.1 s. The performance requirements
+(`fib(25)`, 1e6-iteration loop, 1e6 table operations, ...) are asserted by `tests/bench/requirements_perf.lua`.
 
-* `__gc` is accepted but never called and `__mode` is ignored (no weak tables). `collectgarbage("count")` reports
-  the Go heap in KB; `"collect"` runs a Go GC.
-* `string.dump`, `io.popen`, `os.execute` and binary chunks are not supported (`load` of a binary chunk fails with a
-  message). `debug` is a subset (`traceback`, `getinfo`, upvalue access, metatables; hooks and locals are no-ops).
-* `goto` that jumps into the scope of a local is a compile error (a label at the very end of a block is exempt, as in the manual).
-* `table.sort` does not detect inconsistent comparison functions ("invalid order function"); it never crashes.
-* `os.clock` is process CPU time; `os.date`/`os.time` use the local time zone (`!` prefix = UTC).
-* `io.write` formats floats like `tostring` (`1.0`). `%c` in `os.date` follows the C locale.
+## Limitations and assumptions
+
+* `string.dump` and binary chunks are not supported (`load` accepts text chunks only); there is no C API and
+  `package` loads no C modules (`package.loadlib` reports "dynamic libraries not enabled").
+* `__gc` and `__mode` are accepted and ignored (finalizers never run, weak tables are strong); `io` files are
+  closed when collected.
+* `debug` is minimal: `traceback`, `getinfo`, `getupvalue`/`setupvalue`, metatable access and the registry;
+  `getlocal`/`sethook` are inert.
+* Only the "C" locale. Linux x86-64 only (assembly context switch, `ucontext` for the main stack).
+* The remaining design decisions and assumptions are recorded in `.orchestrator/requirements.md`.

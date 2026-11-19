@@ -1,5 +1,7 @@
-{"milestones":[
-{"id":"M1","title":"Core language + harness","goal":"Lexer, parser, resolver, evaluator, values/tables, metatables, errors, closures, goto, close, CLI, base lib essentials, test runner","criteria":["R1","R2","R3","R4","R5","R6","R7","R8","R9","R10","R11","R12","R21"]},
-{"id":"M2","title":"Standard libraries","goal":"string (patterns, format, pack), table, math, utf8, coroutine, os, io, debug","criteria":["R13","R14","R15","R16","R17","R18","R19"]},
-{"id":"M3","title":"Hardening, performance, docs","goal":"Performance tuning, edge-case tests, README","criteria":["R20","R22"]}
+{"milestones": [
+ {"id":"M1","title":"Core: lexer, parser, evaluator, GC, CLI, harness","goal":"Working interpreter for the core language (values, tables, closures, control flow, operators, error/pcall, minimal base lib, print), GC, CLI with exit codes, Makefile, ./lua launcher and test runner.","criteria":["R1","R2","R3","R4","R5","R6","R7","R9","R13","R24"]},
+ {"id":"M2","title":"Language completeness","goal":"Metamethods, 5.5 global/const/close declarations, goto, coroutines (ucontext), detailed runtime error messages with variable names, error levels, xpcall.","criteria":["R8","R10","R11","R12"]},
+ {"id":"M3","title":"string library","goal":"Complete string library: patterns, format, pack/unpack, string metatable.","criteria":["R15"]},
+ {"id":"M4","title":"Remaining libraries and base","goal":"base (load/require/dofile/select...), table, math, utf8, os, io, package, debug minimum.","criteria":["R14","R16","R17","R18","R19","R20","R21","R22"]},
+ {"id":"M5","title":"Hardening, performance, docs","goal":"Benchmarks, GC stress, robustness limits, manual examples, README, full test-suite green.","criteria":["R23","R25","R26"]}
 ]}

@@ -26,13 +26,13 @@ Run with `python benchmarks/runner.py run [--only NAME]`; it is resumable and su
 | [hey_go](hey_go/report.md) | [rakyll/hey](https://github.com/rakyll/hey) | COMPLETED | 0.96 | 65/68 | 3 | $0.53 |
 | [realworld_api](realworld_api/report.md) | [gothinkster/realworld](https://github.com/gothinkster/realworld) | COMPLETED | 0.99 | 157/158 | 4 | $0.65 |
 | [todomvc_frontend](todomvc_frontend/report.md) | [tastejs/todomvc](https://github.com/tastejs/todomvc) | COMPLETED | 1.00 | 31/31 | 4 | $0.48 |
-| [jq_clone](jq_clone/report.md) | [jqlang/jq](https://github.com/jqlang/jq) | COMPLETED | 0.00 | – | 5 | $4.79 |
+| [jq_clone](jq_clone/report.md) | [jqlang/jq](https://github.com/jqlang/jq) | COMPLETED | 0.67 | 16/24 | 5 | $4.79 |
 | [commonmark_renderer](commonmark_renderer/report.md) | [commonmark/cmark](https://github.com/commonmark/cmark) | COMPLETED | 0.79 | 11/14 | 4 | $2.05 |
 | [mal_lisp](mal_lisp/report.md) | [kanaka/mal](https://github.com/kanaka/mal) | COMPLETED | 1.00 | 25/25 | 8 | $3.88 |
-| [lua_interpreter](lua_interpreter/report.md) | [lua/lua](https://github.com/lua/lua) | COMPLETED | 0.38 | 13/34 | 7 | $6.50 |
+| [lua_interpreter](lua_interpreter/report.md) | [lua/lua](https://github.com/lua/lua) | COMPLETED | 0.38 → 0.38 | 13/34 | 9 | $14.47 |
 | [sql_database](sql_database/report.md) | [sqlite/sqlite](https://github.com/sqlite/sqlite) | COMPLETED | 0.91 | 21/23 | 6 | $5.83 |
 | [redis_server](redis_server/report.md) | [redis/redis](https://github.com/redis/redis) | COMPLETED | 1.00 | 164/164 | 8 | $6.26 |
-| [git_vcs](git_vcs/report.md) | [git/git](https://github.com/git/git) | not run | – | – | – | – |
+| [git_vcs](git_vcs/report.md) | [git/git](https://github.com/git/git) | COMPLETED | 1.00 | 85/85 | 7 | $15.20 |
 | [chess_engine](chess_engine/report.md) | [official-stockfish/Stockfish](https://github.com/official-stockfish/Stockfish) | COMPLETED | 1.00 | 28/28 | 5 | $1.67 |
 | [json_rest_server](json_rest_server/report.md) | [typicode/json-server](https://github.com/typicode/json-server) | COMPLETED | 0.76 → 0.98 | 48/49 | 4 | $1.08 |
 | [nanogpt_training](nanogpt_training/report.md) | [karpathy/nanoGPT](https://github.com/karpathy/nanoGPT) | COMPLETED | 1.00 | 13/13 | 4 | $0.52 |

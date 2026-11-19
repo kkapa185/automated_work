@@ -1,8 +1,5 @@
 #!/bin/sh
-# Launcher: builds the Go interpreter on demand, then executes it.
-DIR=$(cd "$(dirname "$0")" && pwd)
-BIN="$DIR/bin/lua"
-if [ ! -x "$BIN" ] || [ -n "$(find "$DIR" -maxdepth 1 -name '*.go' -newer "$BIN" 2>/dev/null | head -n 1)" ]; then
-  (cd "$DIR" && go build -o bin/lua . ) || exit 1
-fi
-exec "$BIN" "$@"
+# Launcher: builds the interpreter on first use, then runs it.
+d=$(dirname "$0")
+if [ ! -x "$d/bin/luai" ]; then make -s -C "$d" >&2 || exit 1; fi
+exec "$d/bin/luai" "$@"

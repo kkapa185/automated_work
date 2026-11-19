@@ -1,11 +1,10 @@
 {
-  "setup": ["go mod download"],
-  "build": ["go build -o bin/lua ."],
-  "lint": ["go vet ./..."],
-  "test": ["go test ./...", "sh tests/run_tests.sh"],
+  "setup": ["make -s"],
+  "test": ["sh tests/run.sh"],
+  "build": ["make -s"],
   "smoke": [
-    {"command": "./lua tests/cases/args_script.lua a b"},
-    {"command": "./lua tests/smoke/stdlib.lua"},
-    {"command": "./lua tests/smoke/coroutine.lua"}
+    {"command": "./lua tests/cases/language.lua"},
+    {"command": "./lua tests/cases/strings.lua"},
+    {"command": "./lua tests/cases/robustness.lua"}
   ]
 }

@@ -1,0 +1,6 @@
+{
+  "setup": ["python3 --version"],
+  "test": ["python3 -W ignore -m unittest discover -s tests"],
+  "build": ["python3 -m compileall -q ugitlib ugit tests"],
+  "smoke": [{"command": "python3 tests/smoke.py"}]
+}

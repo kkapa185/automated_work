@@ -1,93 +1,112 @@
-dofile("tests/cases/prelude.lua")
--- R17
-local co = coroutine.create(function(a, b)
-  local c = coroutine.yield(a + b)
-  local d, e = coroutine.yield(c * 2)
-  return d + e, "end"
+-- R12: coroutines
+local co = coroutine
+-- value passing both ways (manual-style example)
+local c1 = co.create(function(a, b)
+  assert(a == 1 and b == 2)
+  local c = co.yield(a + b)
+  assert(c == "x")
+  local d, e = co.yield(c, "y")
+  assert(d == nil and e == nil)
+  return "done", 1, 2
 end)
-eq(coroutine.status(co), "suspended")
-local ok, v = coroutine.resume(co, 1, 2); eq(ok, true); eq(v, 3)
-ok, v = coroutine.resume(co, 10); eq(v, 20)
-local ok3, r1, r2 = coroutine.resume(co, 5, 6); eq(ok3, true); eq(r1, 11); eq(r2, "end")
-eq(coroutine.status(co), "dead")
-local ok4, msg = coroutine.resume(co); eq(ok4, false); eq(msg, "cannot resume dead coroutine")
--- wrap as generator
-local function range(n) return coroutine.wrap(function() for i = 1, n do coroutine.yield(i) end end) end
-local sum = 0; for i in range(5) do sum = sum + i end; eq(sum, 15)
--- status from inside / normal
+local r = {co.resume(c1, 1, 2)}; assert(#r == 2 and r[1] == true and r[2] == 3)
+r = {co.resume(c1, "x")}; assert(#r == 3 and r[2] == "x" and r[3] == "y")
+r = {co.resume(c1)}; assert(#r == 4 and r[1] == true and r[2] == "done" and r[4] == 2)
+-- status transitions
 local outer, inner
-outer = coroutine.create(function()
-  inner = coroutine.create(function() eq(coroutine.status(outer), "normal"); eq(coroutine.status(inner), "running") end)
-  coroutine.resume(inner)
-  eq(coroutine.status(outer), "running")
+outer = co.create(function()
+  assert(co.status(outer) == "running")
+  inner = co.create(function() assert(co.status(outer) == "normal"); co.yield() end)
+  co.resume(inner)
+  assert(co.status(inner) == "suspended")
+  co.yield()
 end)
-eq(select(1, coroutine.resume(outer)), true); eq(coroutine.status(inner), "dead")
+assert(co.status(outer) == "suspended"); co.resume(outer); assert(co.status(outer) == "suspended")
+co.resume(outer); assert(co.status(outer) == "dead")
+-- resume dead / non-suspended
+local ok, e = co.resume(outer); assert(ok == false and e == "cannot resume dead coroutine")
+local self; self = co.create(function() return co.resume(self) end)
+local a, b, c = co.resume(self); assert(a == true and b == false and c == "cannot resume non-suspended coroutine")
 -- running / isyieldable
-local main, ismain = coroutine.running(); eq(ismain, true); eq(type(main), "thread"); eq(coroutine.isyieldable(), false)
-coroutine.wrap(function() local c, m = coroutine.running(); eq(m, false); eq(coroutine.isyieldable(), true) end)()
-eq(type(coroutine.create(print)), "thread"); eq(tostring(main):sub(1, 7), "thread:")
--- errors
-eq(err("coroutine.yield(1)"), "c:1: attempt to yield from outside a coroutine")
-co = coroutine.create(function() error("oops") end)
-ok, msg = coroutine.resume(co)
-eq(ok, false); eq(msg:find("oops", 1, true) ~= nil, true); eq(coroutine.status(co), "dead")
-local tbl = {}
-ok, msg = coroutine.resume(coroutine.create(function() error(tbl) end)); eq(msg, tbl)
-ok, msg = coroutine.resume(coroutine.create(function() local x = nil; return x.y end)); eq(msg:find("attempt to index a nil value (local 'x')", 1, true) ~= nil, true)
-eq(err("local f = coroutine.wrap(function() error('boom', 0) end) f()"), "c:1: boom")
-eq(err("local f = coroutine.wrap(function() end) f() f()"), "c:1: cannot resume dead coroutine")
-eq(select(2, pcall(coroutine.wrap(function() error("boom", 0) end))), "boom")
-eq(select(2, pcall(coroutine.wrap(function() error({}, 0) end))) ~= nil, true)
-eq(err("coroutine.resume(1)"), "c:1: bad argument #1 to 'resume' (coroutine expected, got number)")
-eq(err("coroutine.create(1)"), "c:1: bad argument #1 to 'create' (function expected, got number)")
-local self_co; self_co = coroutine.create(function() return coroutine.resume(self_co) end)
-ok, msg, msg2 = coroutine.resume(self_co); eq(ok, true); eq(msg, false); eq(msg2, "cannot resume non-suspended coroutine")
--- yield across pcall, in nested calls and iterators
-co = coroutine.wrap(function()
-  local ok, e = pcall(function() coroutine.yield("in pcall"); error("after", 0) end)
-  coroutine.yield(tostring(ok) .. ":" .. e)
+local main, ismain = co.running(); assert(type(main) == "thread" and ismain == true and co.isyieldable() == false)
+co.wrap(function() local t, m = co.running(); assert(m == false and co.isyieldable() and co.status(t) == "running") end)()
+-- yield outside coroutine
+ok, e = pcall(co.yield, 1); assert(not ok and e == "attempt to yield from outside a coroutine")
+-- errors: resume returns false,msg; positions; non-string error values
+local ce = co.create(function() error("oops") end)
+ok, e = co.resume(ce); assert(ok == false and e == "tests/cases/coroutines.lua:36: oops", e)
+assert(co.status(ce) == "dead")
+local tobj = {}
+ok, e = co.resume(co.create(function() error(tobj) end)); assert(not ok and e == tobj)
+ok, e = co.resume(co.create(function() local x; x.y = 1 end)); assert(not ok and e == "tests/cases/coroutines.lua:41: attempt to index a nil value (local 'x')", e)
+-- wrap: generators, error propagation with position prepended
+local function gen(n) return co.wrap(function() for i = 1, n do co.yield(i) end end) end
+local s = 0; for v in gen(10) do s = s + v end; assert(s == 55)
+local w = co.wrap(function() error("werr") end)
+ok, e = pcall(function() w() end)      -- wrap prepends the caller position to string errors (line 46)
+assert(not ok and e == "tests/cases/coroutines.lua:46: tests/cases/coroutines.lua:45: werr", e)
+w = co.wrap(function() return 1 end); w()
+ok, e = pcall(function() w() end)
+assert(not ok and e == "tests/cases/coroutines.lua:49: cannot resume dead coroutine", e)
+local we = co.wrap(function() error({code = 7}) end)
+ok, e = pcall(we); assert(not ok and e.code == 7)
+-- yield across pcall, metamethods, iterators, nested coroutines
+local log = {}
+local c2 = co.wrap(function()
+  local ok, v = pcall(function() local x = co.yield("in pcall"); error("after " .. x, 0) end)
+  log[#log + 1] = tostring(ok) .. ":" .. v
+  local mt = setmetatable({}, {__index = function(t, k) return co.yield("idx " .. k) end,
+                               __add = function(a, b) return co.yield("add") end,
+                               __call = function(self, x) return co.yield("call " .. x) end})
+  log[#log + 1] = mt.foo; log[#log + 1] = mt + 1; log[#log + 1] = mt(5)
+  for k in (function() return co.yield("iter") end) do log[#log + 1] = k; break end
   return "fin"
 end)
-eq(co(), "in pcall"); eq(co(), "false:after"); eq(co(), "fin")
-local function deep(n) if n == 0 then coroutine.yield("bottom") else deep(n - 1) end return n end
-co = coroutine.wrap(function() deep(50); return "done" end); eq(co(), "bottom"); eq(co(), "done")
--- varargs through yield/resume
-co = coroutine.create(function(...) local a = {coroutine.yield(...)}; return #a end)
-local _, a1, a2, a3 = coroutine.resume(co, 1, 2, 3); eq(a3, 3)
-eq(select(2, coroutine.resume(co, "x", "y")), 2)
-eq(select('#', coroutine.resume(coroutine.create(function() end))), 1)
--- coroutine.wrap inside coroutine.wrap (producer/filter/consumer)
-local function producer() return coroutine.wrap(function() for i = 1, 4 do coroutine.yield(i) end end) end
-local function filter(src) return coroutine.wrap(function() for v in src do if v % 2 == 0 then coroutine.yield(v * 10) end end end) end
-local res = {}; for v in filter(producer()) do res[#res + 1] = v end; eq(table.concat(res, ","), "20,40")
+assert(c2() == "in pcall"); assert(c2("resume") == "idx foo"); assert(c2("A") == "add"); assert(c2("B") == "call 5")
+assert(c2("C") == "iter"); assert(c2("K") == "fin")
+assert(log[1] == "false:after resume" and log[2] == "A" and log[3] == "B" and log[4] == "C" and log[5] == "K")
+local nest = co.wrap(function() local inner = co.wrap(function() co.yield(1); co.yield(2) end); co.yield(inner() + inner()) end)
+assert(nest() == 3)
+-- many coroutines are reclaimed by GC
+local live = {}
+for i = 1, 20000 do
+  local c = co.wrap(function(x) local y = co.yield(x + 1); return y * 2 end)
+  assert(c(i) == i + 1)
+  if i % 1000 == 0 then live[#live + 1] = c end
+end
+collectgarbage()
+for i, c in ipairs(live) do assert(c(i) == i * 2) end
+-- suspended coroutines keep their locals alive across GC
+local holders = {}
+for i = 1, 200 do
+  local c = co.create(function() local t = {i, tostring(i)}; co.yield(); collectgarbage(); return t[1], t[2] end)
+  co.resume(c); holders[i] = c
+end
+collectgarbage()
+for i = 1, 200 do local ok, a, b = co.resume(holders[i]); assert(ok and a == i and b == tostring(i)) end
+-- recursion inside coroutines, overflow is an error not a crash
+local rc = co.wrap(function() local function d(n) if n == 0 then return 0 end return 1 + d(n - 1) end return d(500) end)
+assert(rc() == 500)
+local so = co.create(function() local function inf(n) return 1 + inf(n) end return inf(1) end)
+ok, e = co.resume(so); assert(ok == false and type(e) == "string")
 -- close
-co = coroutine.create(function() coroutine.yield() end)
-coroutine.resume(co); eq(coroutine.close(co), true); eq(coroutine.status(co), "dead")
-eq(coroutine.close(coroutine.create(print)), true)
-local closed = {}
-co = coroutine.create(function()
-  local x <close> = setmetatable({}, {__close = function() closed[#closed + 1] = "x" end})
-  coroutine.yield(1)
-  closed[#closed + 1] = "not reached"
-end)
-coroutine.resume(co); eq(coroutine.close(co), true); eq(closed[1], "x"); eq(#closed, 1)
-co = coroutine.create(function() error("E", 0) end); coroutine.resume(co)
-local cok, cerr = coroutine.close(co); eq(cok, false); eq(cerr, "E")
-co = coroutine.create(function()
-  local x <close> = setmetatable({}, {__close = function() error("close err", 0) end})
-  coroutine.yield()
-end)
-coroutine.resume(co); cok, cerr = coroutine.close(co); eq(cok, false); eq(cerr, "close err")
-eq(err("local co co = coroutine.create(function() coroutine.close(co) end) local ok, e = coroutine.resume(co) error(e, 0)"), "c:1: cannot close a running coroutine")
--- many switches
-local counter = 0
-co = coroutine.wrap(function() while true do counter = counter + 1; coroutine.yield() end end)
-for i = 1, 20000 do co() end; eq(counter, 20000)
--- many coroutines
-local cos = {}
-for i = 1, 500 do cos[i] = coroutine.create(function(x) local y = coroutine.yield(x * 2); return y + i end) end
-local total = 0
-for i = 1, 500 do local _, v = coroutine.resume(cos[i], i); total = total + v end
-for i = 1, 500 do local _, v = coroutine.resume(cos[i], 1); total = total + v end
-eq(total, 2 * 125250 + 500 + 125250)
-print("ok")
+local cl = co.create(function() local x <close> = setmetatable({}, {__close = function() log.closed = true end}); co.yield(1) end)
+co.resume(cl); assert(co.close(cl) == true and log.closed == true and co.status(cl) == "dead")
+assert(co.close(co.create(print)) == true)
+local ce2 = co.create(function() local x <close> = setmetatable({}, {__close = function(_, err) log.cerr = err end}); error("E", 0) end)
+co.resume(ce2); ok, e = co.close(ce2); assert(ok == false and e == "E" and log.cerr == "E")
+ok, e = pcall(co.close, main); assert(not ok and e == "cannot close a running coroutine")
+-- wrap closes on error: pending tbc run
+local wlog = {}
+local wc = co.wrap(function() local x <close> = setmetatable({}, {__close = function() wlog[1] = "closed" end}); error("fail", 0) end)
+pcall(wc); assert(wlog[1] == "closed")
+-- argument validation
+ok, e = pcall(co.create, 1); assert(not ok and e == "bad argument #1 to 'create' (function expected, got number)", e)
+ok, e = pcall(co.resume, 1); assert(not ok and e == "bad argument #1 to 'resume' (coroutine expected, got number)", e)
+-- passing many values
+local many = co.wrap(function(...) local t = {...}; co.yield(#t); return ... end)
+assert(many(1, 2, 3) == 3)
+local function pass(...) return select('#', ...), ... end
+local echo = co.wrap(function(...) while true do co.yield(pass(...)) end end)
+assert(echo(nil, nil, nil) == 3)
+print("coroutines ok")

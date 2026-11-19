@@ -1,0 +1,83 @@
+-- R17/R18: math and utf8
+local function err(f, ...) local ok, e = pcall(f, ...); assert(not ok); return e end
+assert(math.pi == 3.141592653589793 and math.huge == 1/0 and -math.huge == -1/0)
+assert(math.maxinteger == 0x7fffffffffffffff and math.mininteger == -0x7fffffffffffffff - 1 and math.maxinteger + 1 == math.mininteger)
+assert(math.type(1) == "integer" and math.type(1.0) == "float" and math.type("1") == nil and math.type(nil) == nil)
+assert(err(math.type) == "bad argument #1 to 'type' (value expected)")
+-- floor / ceil return integers when representable
+assert(math.floor(3.7) == 3 and math.type(math.floor(3.7)) == "integer" and math.floor(-3.2) == -4 and math.floor(5) == 5)
+assert(math.ceil(3.2) == 4 and math.ceil(-3.7) == -3 and math.type(math.ceil(3.2)) == "integer")
+assert(math.type(math.floor(2^70)) == "float" and math.floor(2^70) == 2^70 and math.floor(-0.0) == 0)
+assert(math.abs(-5) == 5 and math.abs(-5.5) == 5.5 and math.abs(math.mininteger) == math.mininteger and math.type(math.abs(-5)) == "integer")
+assert(math.sqrt(16) == 4.0 and math.type(math.sqrt(16)) == "float" and math.sqrt(2) > 1.41421 and math.sqrt(2) < 1.41422)
+assert(math.sin(0) == 0.0 and math.cos(0) == 1.0 and math.tan(0) == 0.0 and math.asin(0) == 0.0 and math.acos(1) == 0.0)
+assert(math.atan(1) > 0.7853981 and math.atan(1) < 0.7853982 and math.atan(1, 1) == math.atan(1) and math.atan(0, -1) == math.pi)
+assert(math.exp(0) == 1.0 and math.log(1) == 0.0 and math.log(8, 2) == 3.0 and math.log(100, 10) == 2.0 and math.log(math.exp(2)) > 1.99999)
+assert(math.log(27, 3) > 2.9999999 and math.log(27, 3) < 3.0000001)
+-- fmod / modf
+assert(math.fmod(7, 3) == 1 and math.fmod(-7, 3) == -1 and math.fmod(7, -3) == 1 and math.type(math.fmod(7, 3)) == "integer")
+assert(math.fmod(7.5, 2) == 1.5 and math.fmod(-7.5, 2) == -1.5 and math.fmod(1, 0.0) ~= math.fmod(1, 0.0))
+assert(math.fmod(math.mininteger, -1) == 0 and err(math.fmod, 1, 0) == "bad argument #2 to 'fmod' (zero)")
+local i, f = math.modf(3.5); assert(i == 3.0 and f == 0.5 and math.type(i) == "float")
+i, f = math.modf(-3.5); assert(i == -3.0 and f == -0.5)
+i, f = math.modf(5); assert(i == 5 and f == 0.0 and math.type(i) == "integer" and math.type(f) == "float")
+i, f = math.modf(math.huge); assert(i == math.huge and f == 0.0)
+i, f = math.modf(-math.huge); assert(i == -math.huge and f == 0.0)
+assert(tostring(math.modf(3.5)) == "3.0")
+-- tointeger / ult / max / min
+assert(math.tointeger(3.0) == 3 and math.tointeger(3.5) == nil and math.tointeger("8") == 8 and math.tointeger({}) == nil and math.tointeger(2^63) == nil)
+assert(math.tointeger(-0.0) == 0 and math.type(math.tointeger(5)) == "integer")
+assert(math.ult(1, 2) and not math.ult(2, 1) and math.ult(1, -1) and not math.ult(-1, 1) and math.ult(0, math.mininteger))
+assert(math.max(1, 5, 3) == 5 and math.min(4, 2, 8) == 2 and math.max(1, 2.5) == 2.5 and math.type(math.max(1, 2)) == "integer" and math.min(1.5) == 1.5)
+assert(math.max(-1, -2) == -1 and math.min(math.mininteger, 0) == math.mininteger)
+assert(err(math.max) == "bad argument #1 to 'max' (number expected, got no value)")
+assert(err(math.floor, "x") == "bad argument #1 to 'floor' (number expected, got string)")
+assert(math.floor("3.7") == 3)
+-- random
+math.randomseed(42); local r1 = {math.random(), math.random(100), math.random(5, 10)}
+math.randomseed(42); assert(r1[1] == math.random() and r1[2] == math.random(100) and r1[3] == math.random(5, 10))
+for _ = 1, 2000 do
+  local x = math.random(); assert(x >= 0 and x < 1)
+  local y = math.random(10); assert(y >= 1 and y <= 10 and math.type(y) == "integer")
+  local z = math.random(-5, 5); assert(z >= -5 and z <= 5)
+end
+local seen = {}; for _ = 1, 500 do seen[math.random(3)] = true end; assert(seen[1] and seen[2] and seen[3])
+assert(math.type(math.random(0)) == "integer" and math.random(7, 7) == 7)
+assert(math.random(math.mininteger, math.maxinteger) ~= nil)
+assert(err(math.random, 2, 1) == "bad argument #2 to 'random' (interval is empty)")
+assert(err(math.random, 0, -1) == "bad argument #2 to 'random' (interval is empty)")
+assert(err(math.random, 1, 2, 3) == "wrong number of arguments")
+local s1, s2 = math.randomseed(7); assert(s1 == 7 and s2 == 0)
+-- utf8
+assert(utf8.char() == "" and utf8.char(72, 228, 8364, 0x1F600) == "H\xC3\xA4\xE2\x82\xAC\xF0\x9F\x98\x80" and utf8.char(0x7FFFFFFF) == "\xFD\xBF\xBF\xBF\xBF\xBF")
+assert(utf8.charpattern == "[\0-\x7F\xC2-\xFD][\x80-\xBF]*")
+assert(utf8.len("") == 0 and utf8.len("abc") == 3 and utf8.len("häl€") == 4 and utf8.len("\xF0\x9F\x98\x80") == 1)
+local ln, bad = utf8.len("ab\xFFcd"); assert(ln == nil and bad == 3)
+ln, bad = utf8.len("\xE2\x82"); assert(ln == nil and bad == 1)
+assert(utf8.len("häl€", 4) == 2 and utf8.len("häl€", -3) == 1 and utf8.len("abc", 4) == 0 and utf8.len("abc", 2, 1) == 0)
+assert(utf8.len("\xED\xA0\x80") == nil and utf8.len("\xED\xA0\x80", 1, -1, true) == 1)     -- surrogates only in lax mode
+assert(utf8.len("\xF4\x90\x80\x80") == nil and utf8.len("\xF4\x90\x80\x80", 1, -1, true) == 1)
+assert(utf8.len("\xC0\x80") == nil and utf8.len("\xE0\x80\x80") == nil)                    -- overlong forms
+assert(err(utf8.len, "abc", 5) == "bad argument #2 to 'len' (initial position out of bounds)")
+assert(err(utf8.len, "abc", 1, 4) == "bad argument #3 to 'len' (final position out of bounds)")
+assert(utf8.codepoint("A") == 65 and utf8.codepoint("häl", 1, -1) == 104 and select('#', utf8.codepoint("häl", 1, -1)) == 3)
+local c1, c2, c3 = utf8.codepoint("häl", 1, -1); assert(c1 == 104 and c2 == 228 and c3 == 108)
+assert(utf8.codepoint("€") == 8364 and utf8.codepoint("\xF0\x9F\x98\x80") == 0x1F600 and select('#', utf8.codepoint("abc", 2, 1)) == 0)
+assert(err(utf8.codepoint, "\xFF") == "invalid UTF-8 code")
+assert(err(utf8.codepoint, "abc", 4) == "bad argument #3 to 'codepoint' (out of bounds)" and err(utf8.codepoint, "abc", 0) == "bad argument #2 to 'codepoint' (out of bounds)")
+assert(err(utf8.codepoint, "abc", 1, 4) == "bad argument #3 to 'codepoint' (out of bounds)")
+assert(utf8.offset("häl€", 1) == 1 and utf8.offset("häl€", 2) == 2 and utf8.offset("häl€", 3) == 4 and utf8.offset("häl€", 4) == 5)
+assert(utf8.offset("häl€", 5) == 8 and utf8.offset("häl€", 6) == nil and utf8.offset("häl€", -1) == 5 and utf8.offset("häl€", -2) == 4)
+assert(utf8.offset("häl€", 0, 3) == 2 and utf8.offset("häl€", 0, 6) == 5 and utf8.offset("abc", 2, 2) == 3)
+assert(err(utf8.offset, "häl", 1, 3) == "initial position is a continuation byte")
+assert(err(utf8.offset, "abc", 1, 5) == "bad argument #3 to 'offset' (position out of bounds)")
+local cps = {}
+for p, c in utf8.codes("hä€") do cps[#cps + 1] = p .. ":" .. c end
+assert(table.concat(cps, " ") == "1:104 2:228 4:8364")
+for p, c in utf8.codes("") do error("no iteration") end
+assert(err(function() for p, c in utf8.codes("a\xFFb") do end end):find(": invalid UTF%-8 code$"))
+local n = 0; for p, c in utf8.codes("\xED\xA0\x80", true) do n = n + 1 end; assert(n == 1)
+local pat = {}; for ch in ("häl€"):gmatch(utf8.charpattern) do pat[#pat + 1] = ch end; assert(#pat == 4 and pat[2] == "ä")
+assert(err(utf8.char, -1) == "bad argument #1 to 'char' (value out of range)")
+assert(err(utf8.char, 0x80000000) == "bad argument #1 to 'char' (value out of range)")
+print("math_utf8 ok")

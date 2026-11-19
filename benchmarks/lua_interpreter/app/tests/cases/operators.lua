@@ -1,0 +1,76 @@
+-- R5/R6: operators, precedence, number semantics
+assert(2 + 3 * 4 == 14 and (2 + 3) * 4 == 20)
+assert(2 ^ 3 ^ 2 == 512.0 and -2 ^ 2 == -4.0)
+assert(not nil == true and not 0 == false)
+assert(1 .. 2 == "12" and "a" .. "b" .. "c" == "abc" and 1.5 .. "" == "1.5")
+assert("a" .. 1 + 2 == "a3")              -- + binds tighter than ..
+assert(1 < 2 == true and (1 < 2) == true)
+assert(#"abc" + 1 == 4 and -#"abc" == -3)
+assert(1 or error("no") and true)
+assert((nil and 1) == nil and (false or nil) == nil and (1 and 2) == 2 and (nil or 3) == 3)
+-- bitwise precedence: or < and < cmp < | < ~ < & < shift < .. < +-
+assert(1 | 2 ~ 3 & 4 == 1 | (2 ~ (3 & 4)))
+assert(1 << 2 + 1 == 8 and 6 & 3 | 8 == 10 and 5 ~ 1 == 4 and ~0 == -1 and ~5 == -6)
+assert(1 << 64 == 0 and 1 << -1 == 0 and -1 >> 1 == 0x7fffffffffffffff and 2 >> -1 == 4 and 1 << 63 == -9223372036854775807 - 1)
+assert(3.0 | 0 == 3 and "3" | 0 == 3)
+-- integer vs float
+assert(1 == 1.0)
+assert(10 // 3 == 3 and -10 // 3 == -4 and 10 // -3 == -4 and -10 // -3 == 3)
+assert(10 % 3 == 1 and -10 % 3 == 2 and 10 % -3 == -2 and -10 % -3 == -1)
+assert(5.5 // 2 == 2.0 and -5.5 // 2 == -3.0 and 5.5 % 2 == 1.5 and -5.5 % 2 == 0.5 and 5.5 % -2 == -0.5)
+assert(7 // 0.0 == 1/0 and -7 // 0.0 == -1/0)
+local nan = 0/0; assert(nan ~= nan and (5 % 0.0) ~= (5 % 0.0))
+assert(1/2 == 0.5 and 4/2 == 2.0)
+assert(tostring(4/2) == "2.0" and tostring(3 // 1) == "3" and tostring(3 // 1.0) == "3.0")
+assert(tostring(2^53) == "9.007199254741e+15" and tostring(1e15) == "1e+15" and tostring(123456789012345.0) == "1.2345678901234e+14")
+assert(tostring(-0.0) == "-0.0" and tostring(1/0) == "inf" and tostring(-1/0) == "-inf")
+assert(tostring(3.14159265358979) == "3.1415926535898" and tostring(0.1) == "0.1" and tostring(1e-5) == "1e-05")
+assert(0x7fffffffffffffff + 1 == -0x7fffffffffffffff - 1 and 0x7fffffffffffffff * 2 == -2)
+assert(-(-0x7fffffffffffffff - 1) == -0x7fffffffffffffff - 1)
+assert((-0x7fffffffffffffff - 1) // -1 == -0x7fffffffffffffff - 1 and (-0x7fffffffffffffff - 1) % -1 == 0)
+local function err(src) local f = assert(load(src, "=c")); local ok, e = pcall(f); assert(not ok); return e end
+assert(err("return 1 // 0") == "c:1: attempt to perform 'n//0'")
+assert(err("return 1 % 0") == "c:1: attempt to perform 'n%0'")
+local ok, e
+-- comparisons mixing int/float, exactness
+assert(9007199254740993 ~= 9007199254740992.0 and 9007199254740993 > 9007199254740992.0)
+assert(0x7fffffffffffffff < 9223372036854775808.0 and 0x7fffffffffffffff ~= 9223372036854775808.0)
+assert(-0x7fffffffffffffff - 1 == -9223372036854775808.0 and 1 < 1.5 and 2 > 1.5 and 1 <= 1.0 and 1 >= 1.0)
+assert(not (nan < 1) and not (nan > 1) and not (nan <= nan) and not (1 < nan))
+assert("a" < "b" and "a" < "ab" and "" < "a" and "Z" < "a" and "a\0b" < "a\0c" and not ("a" < "a") and "a" <= "a")
+-- string -> number coercion
+assert("10" + 1 == 11)
+assert("0x10" + 0 == 16 and "3.0" + 1 == 4.0 and " 5 " * 2 == 10 and "1e1" + 0 == 10.0 and 10 .. "" == "10")
+assert(tostring("10" + 1) == "11" and tostring("3.0" + 1) == "4.0" and tostring("0x10" * 1) == "16")
+assert(err([[return "abc" + 1]]) == "c:1: attempt to perform arithmetic on a string value (constant 'abc')")
+-- tonumber
+assert(tonumber("10") == 10 and tonumber("  0x1F  ") == 31 and tonumber("1e2") == 100.0 and tonumber("") == nil)
+assert(tonumber("10", 2) == 2 and tonumber("ff", 16) == 255 and tonumber("zz", 36) == 1295 and tonumber("8", 8) == nil)
+assert(tonumber("1 2") == nil and tonumber("0x") == nil and tonumber("1e") == nil and tonumber("inf") == nil and tonumber("nan") == nil)
+assert(tonumber(nil) == nil and tonumber({}) == nil and tonumber("-0x10") == -16 and tonumber("- 1") == nil)
+assert(tonumber("9223372036854775807") == 9223372036854775807 and tonumber("9223372036854775808") == 9223372036854775808.0)
+assert(tonumber("-9223372036854775808") == -9223372036854775807 - 1)
+assert(tonumber("0x.8") == 0.5 and tonumber("0xA.8p1") == 21.0 and tonumber(".5") == 0.5 and tonumber("5.") == 5.0)
+-- float keys normalised
+local t = {}; t[1.0] = "a"; t[2] = "b"; assert(t[1] == "a" and t[2.0] == "b" and #t == 2)
+t[2^53] = "big"; assert(t[2^53] == "big" and t[9007199254740992] == "big")
+assert(err("local t, nan = {}, 0/0; t[nan] = 1") == "c:1: table index is NaN")
+assert(err("local t = {}; t[nil] = 1") == "c:1: table index is nil")
+assert(t[nil] == nil and t[nan] == nil)
+-- integer for loops without overflow
+local n = 0
+for i = 0x7ffffffffffffffe, 0x7fffffffffffffff do n = n + 1 end
+assert(n == 2)
+n = 0; for i = -0x7fffffffffffffff - 1, -0x7fffffffffffffff - 1 + 1 do n = n + 1 end; assert(n == 2)
+n = 0; for i = 1, 0 do n = n + 1 end; assert(n == 0)
+n = 0; for i = 1, 3.5 do n = n + 1 end; assert(n == 3)
+n = 0; for i = 3, 1, -1 do n = n + 1 end; assert(n == 3)
+n = 0; for i = 1.0, 2.0, 0.5 do n = n + 1 end; assert(n == 3)
+assert(err("for i = 1, 10, 0 do end") == "c:1: 'for' step is zero")
+assert(err("for i = 'a', 10 do end") == "c:1: 'for' initial value must be a number")
+assert(err("for i = 1, {} do end") == "c:1: 'for' limit must be a number")
+assert(err("for i = 1, 2, {} do end") == "c:1: 'for' step must be a number")
+-- type names
+assert(type(1) == "number" and type(1.5) == "number" and type("") == "string" and type(nil) == "nil" and type(print) == "function")
+assert(type(function() end) == "function" and type({}) == "table" and type(true) == "boolean")
+print("operators ok")

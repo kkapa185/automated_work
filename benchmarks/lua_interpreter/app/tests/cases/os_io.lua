@@ -1,0 +1,91 @@
+-- R19/R20: os and io
+local function err(f, ...) local ok, e = pcall(f, ...); assert(not ok); return e end
+-- os.time / os.date (UTC conversions are checked with the "!" forms; known epoch values)
+assert(math.type(os.time()) == "integer" and os.time() > 1600000000)
+assert(os.date("!%Y-%m-%d %H:%M:%S", 0) == "1970-01-01 00:00:00")
+assert(os.date("!%Y-%m-%d %H:%M:%S", 86400 + 3661) == "1970-01-02 01:01:01")
+assert(os.date("!%A %B %d %j %y %p %I %%", 1000000000) == "Sunday September 09 252 01 AM 01 %")   -- 2001-09-09T01:46:40Z
+assert(os.date("!%x %X", 1000000000) == "09/09/01 01:46:40" and os.date("!%D %T %R", 1000000000) == "09/09/01 01:46:40 01:46")
+assert(os.date("!%c", 1000000000) == "Sun Sep  9 01:46:40 2001")
+local d = os.date("!*t", 1000000000)
+assert(d.year == 2001 and d.month == 9 and d.day == 9 and d.hour == 1 and d.min == 46 and d.sec == 40 and d.wday == 1 and d.yday == 252 and d.isdst == false)
+assert(os.date("%Y", 0) ~= nil and type(os.date()) == "string")
+local t0 = os.time({year = 2020, month = 1, day = 1, hour = 0})
+local t1 = os.time({year = 2020, month = 1, day = 2, hour = 0}); assert(t1 - t0 == 86400)
+local tn = {year = 2020, month = 14, day = 35, hour = 12}; os.time(tn)       -- normalises fields
+assert(tn.year == 2021 and tn.month == 3 and tn.day == 7 and tn.yday == 66 and tn.wday == 1)
+assert(os.time({year = 2020, month = 1, day = 1}) == os.time({year = 2020, month = 1, day = 1, hour = 12, min = 0, sec = 0}))
+assert(os.difftime(10, 4) == 6.0 and math.type(os.difftime(10, 4)) == "float")
+assert(err(os.time, {year = 2020}) == "field 'month' missing in date table" and err(os.time, {year = 2020, month = 1}) == "field 'day' missing in date table")
+assert(err(os.time, {year = 2020, month = "x", day = 1}) == "field 'month' is not an integer")
+assert(err(os.date, "%Ez") == "bad argument #1 to 'date' (invalid conversion specifier '%Ez')")
+assert(err(os.date, "%Q") == "bad argument #1 to 'date' (invalid conversion specifier '%Q')")
+local c = os.clock(); assert(math.type(c) == "float" and c >= 0)
+assert(os.getenv("HOME") ~= nil and os.getenv("SURELY_NOT_DEFINED_12345") == nil)
+assert(os.setlocale() == "C" and os.setlocale("C") == "C" and os.setlocale("xx_YY") == nil)
+-- files
+local name = os.tmpname()
+assert(type(name) == "string")
+local f = assert(io.open(name, "w"))
+assert(io.type(f) == "file" and io.type(42) == nil and tostring(f):find("^file %(0x"))
+assert(f:write("line1\n", 2, " ", 3.5, "\nline3\n12 0x1F -7.5e1 nan\n") == f)
+assert(f:seek("cur") == #"line1\n2 3.5\nline3\n12 0x1F -7.5e1 nan\n" and f:seek("set", 2) == 2 and f:seek("end") == f:seek("cur"))
+assert(f:close() == true and io.type(f) == "closed file" and tostring(f) == "file (closed)")
+assert(err(f.write, f, "x") == "attempt to use a closed file")
+assert(select(2, pcall(f.close, f)) == "attempt to use a closed file")
+f = assert(io.open(name))
+assert(f:read() == "line1" and f:read("l") == "2 3.5" and f:read("L") == "line3\n")
+assert(f:read("n") == 12 and f:read("n") == 31 and f:read("n") == -75.0 and f:read("n") == nil)
+assert(f:read(1) == "n" and f:read(0) == "" and f:read("a") == "an\n" and f:read("a") == "" and f:read("l") == nil and f:read(0) == nil and f:read(1) == nil)
+f:seek("set"); assert(f:read(5) == "line1" and f:read("*l") == "" and f:read("*L") == "2 3.5\n")
+f:seek("set"); local a, b, c2 = f:read("l", "l", "L"); assert(a == "line1" and b == "2 3.5" and c2 == "line3\n")
+f:seek("set"); local n1, n2 = f:read("n", "n"); assert(n1 == nil and n2 == nil)
+assert(err(f.read, f, "x") == "bad argument #1 to 'read' (invalid format)")
+f:close()
+-- lines
+local lines = {}; for l in io.lines(name) do lines[#lines + 1] = l end
+assert(#lines == 4 and lines[1] == "line1" and lines[4] == "12 0x1F -7.5e1 nan")
+local keep = {}; for l in io.lines(name, "L") do keep[#keep + 1] = l end; assert(keep[1] == "line1\n")
+local cnt = 0; for a, b in io.lines(name, 1, 2) do cnt = cnt + 1; if cnt == 1 then assert(a == "l" and b == "in") end end
+f = io.open(name); local it = f:lines(); assert(it() == "line1" and it() == "2 3.5"); f:close()
+assert(err(it) == "file is already closed")
+assert(err(io.lines, "/nonexistent/file.txt"):find("/nonexistent/file.txt: No such file or directory", 1, true))
+-- append / r+ / w+ modes
+f = io.open(name, "a"); f:write("appended\n"); f:close()
+f = io.open(name, "r"); local all = f:read("a"); f:close(); assert(all:sub(-9) == "appended\n")
+f = io.open(name, "w+"); f:write("abc"); f:seek("set"); assert(f:read("a") == "abc"); f:close()
+f = io.open(name, "r+"); f:write("X"); f:seek("set"); assert(f:read("a") == "Xbc"); f:close()
+f = io.open(name, "rb"); assert(f:read("a") == "Xbc"); f:close()
+-- failures: open returns nil, msg, errno
+local nf, msg, code = io.open("/nonexistent/dir/file", "r")
+assert(nf == nil and msg == "/nonexistent/dir/file: No such file or directory" and code == 2)
+assert(err(io.open, name, "rw") == "bad argument #2 to 'open' (invalid mode)")
+assert(err(io.open, name, "") == "bad argument #2 to 'open' (invalid mode)")
+-- default input/output redirection
+local out = io.open(name, "w"); local old = io.output(); io.output(out)
+io.write("redirected ", 1, "\n"); assert(io.output() == out); io.close(); io.output(old)
+assert(io.output() == io.stdout)
+io.input(name); assert(io.read("L") == "redirected 1\n" and io.read() == nil); io.close(io.input()); io.input(io.stdin)
+assert(io.input() == io.stdin)
+assert(io.write() == io.stdout and io.stdout:write("") == io.stdout)
+assert(err(io.write, {}) == "bad argument #1 to 'write' (string expected, got table)")
+local so, sm = io.stdout:close(); assert(so == nil and sm == "cannot close standard file")
+assert(io.stderr:write("") == io.stderr and io.stdout:flush() == io.stdout and io.flush() == io.stdout)
+assert(io.stdout:setvbuf("full") == true and io.stdout:setvbuf("line") == true and err(io.stdout.setvbuf, io.stdout, "bogus") == "bad argument #2 to 'setvbuf' (invalid option 'bogus')")
+assert(err(f.seek, io.stdout, "bogus") == "bad argument #2 to 'seek' (invalid option 'bogus')")
+assert(getmetatable(io.stdout).__name == "FILE*" and err(io.stdout.write, {}, "x"):find("FILE%*"))
+-- tmpfile, popen, remove, rename
+local tf = io.tmpfile(); tf:write("tmp"); tf:seek("set"); assert(tf:read("a") == "tmp"); tf:close()
+local p = io.popen("echo hello; exit 3"); assert(p:read("l") == "hello"); local ok, how, rc = p:close(); assert(ok == nil and how == "exit" and rc == 3)
+p = io.popen("true"); local ok2, how2, rc2 = p:close(); assert(ok2 == true and how2 == "exit" and rc2 == 0)
+local newname = name .. ".renamed"
+assert(os.rename(name, newname) == true and io.open(name) == nil and io.open(newname) ~= nil)
+assert(os.remove(newname) == true)
+local rok, rmsg, rcode = os.remove(newname); assert(rok == nil and rmsg == newname .. ": No such file or directory" and rcode == 2)
+local mok, mmsg = os.rename(newname, newname .. "x"); assert(mok == nil and mmsg:find("No such file or directory"))
+-- gc closes unreferenced files without crashing
+for i = 1, 300 do local g = io.open("/dev/null", "r"); g = nil end
+collectgarbage()
+-- to-be-closed file
+do local g <close> = io.open("/dev/null"); assert(io.type(g) == "file") end
+print("os_io ok")
